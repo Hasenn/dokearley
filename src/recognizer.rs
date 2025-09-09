@@ -306,108 +306,135 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
             true
         }
     }
-pub fn recognize(&mut self, start: &str) {
-    let nullable = self.grammar.compute_nullable();
 
-    // Keep track of right-recursive predictions to avoid duplicates
-    let mut predicted_rr: HashSet<(usize, usize)> = HashSet::new();
+    pub fn recognize(&mut self, start: &str) {
+        // Precompute nullable nonterminals
+        let nullable = self.grammar.compute_nullable();
 
-    // Initialize chart with start productions
-    for (pid, _) in self.grammar.prods_for(start) {
-        let it = Item::new(pid, 0, 0);
-        self.add_item(0, it.clone());
-        self.add_nullable_items(it, 0, &nullable);
-    }
+        // Initialize chart with start productions
+        for (pid, _) in self.grammar.prods_for(start) {
+            let it = Item::new(pid, 0, 0);
+            self.add_item(0, it.clone());
+            // Advance dot for nullable prefixes
+            self.add_nullable_items(it, 0, &nullable);
+        }
 
-    let n = self.tokens.len();
-    for pos in 0..=n {
-        let mut changed = true;
-        while changed {
-            changed = false;
-            let keys: Vec<ItemKey> = self.sets[pos].keys().cloned().collect();
+        let n = self.tokens.len();
+        for pos in 0..=n {
+            let mut changed = true;
+            while changed {
+                changed = false;
+                let keys: Vec<ItemKey> = self.sets[pos].keys().cloned().collect();
 
-            for key in keys {
-                let item = match self.sets[pos].get(&key) {
-                    Some(it) => it.clone(),
-                    None => continue,
-                };
+                for key in keys {
+                    let item = match self.sets[pos].get(&key) {
+                        Some(it) => it.clone(),
+                        None => continue,
+                    };
 
-                let prod = &self.grammar.productions[item.key.prod_id];
+                    let prod = &self.grammar.productions[item.key.prod_id];
 
-                if item.key.dot < prod.rhs.len() {
-                    let next = &prod.rhs[item.key.dot];
-
-                    match next {
-                        Symbol::NonTerminal(nt) | Symbol::Placeholder { name: _, typ: nt } => {
-                            for (pid, _) in self.grammar.prods_for(nt) {
-                                // Right-recursion check:
-                                let rr_check = (pid, pos);
-                                if predicted_rr.insert(rr_check) {
-                                    let new_it = Item::new(pid, 0, pos);
+                    if item.key.dot < prod.rhs.len() {
+                        let next = &prod.rhs[item.key.dot];
+                        match next {
+                            Symbol::NonTerminal(nt) => {
+                                for (pid, _) in self.grammar.prods_for(nt) {
+                                    let mut new_it = Item::new(pid, 0, pos);
                                     if self.add_item(pos, new_it.clone()) {
                                         changed = true;
                                         self.add_nullable_items(new_it, pos, &nullable);
                                     }
                                 }
                             }
-                        }
-
-                        Symbol::Terminal(lit) => {
-                            if pos < self.tokens.len() && self.tokens[pos].text == *lit {
-                                let mut new_it =
-                                    Item::new(item.key.prod_id, item.key.dot + 1, item.key.start);
-                                let bp = BackPtr {
-                                    child: ItemKey {
+                            Symbol::Terminal(lit) => {
+                                if pos < self.tokens.len() && self.tokens[pos].text == *lit {
+                                    let mut new_it = Item::new(
+                                        item.key.prod_id,
+                                        item.key.dot + 1,
+                                        item.key.start,
+                                    );
+                                    let child = ItemKey {
                                         prod_id: usize::MAX,
                                         dot: 0,
                                         start: pos,
-                                    },
-                                    at: item.key.dot,
-                                };
-                                new_it.bps.push(vec![bp]);
-                                if self.add_item(pos + 1, new_it) {
-                                    changed = true;
+                                    };
+                                    let bp = BackPtr {
+                                        child,
+                                        at: item.key.dot,
+                                    };
+                                    new_it.bps.push(vec![bp]);
+                                    if self.add_item(pos + 1, new_it) {
+                                        changed = true;
+                                    }
+                                }
+                            }
+                            Symbol::Placeholder { name: _, typ } => {
+                                if pos < self.tokens.len() && is_builtin(typ, &self.tokens[pos]) {
+                                    let mut new_it = Item::new(
+                                        item.key.prod_id,
+                                        item.key.dot + 1,
+                                        item.key.start,
+                                    );
+                                    let child = ItemKey {
+                                        prod_id: usize::MAX - 1,
+                                        dot: 0,
+                                        start: pos,
+                                    };
+                                    let bp = BackPtr {
+                                        child,
+                                        at: item.key.dot,
+                                    };
+                                    new_it.bps.push(vec![bp]);
+                                    if self.add_item(pos + 1, new_it) {
+                                        changed = true;
+                                    }
+                                } else {
+                                    for (pid, _) in self.grammar.prods_for(typ) {
+                                        let new_it = Item::new(pid, 0, pos);
+                                        if self.add_item(pos, new_it.clone()) {
+                                            changed = true;
+                                            self.add_nullable_items(new_it, pos, &nullable);
+                                        }
+                                    }
                                 }
                             }
                         }
-                    }
-                } else {
-                    // completion (unchanged)
-                    let lhs = prod.lhs;
-                    let waiting_keys: Vec<ItemKey> = self.sets[item.key.start]
-                        .keys()
-                        .filter(|k| {
-                            let p = &self.grammar.productions[k.prod_id];
-                            if k.dot < p.rhs.len() {
-                                match &p.rhs[k.dot] {
-                                    Symbol::NonTerminal(name) => name == &lhs,
-                                    Symbol::Placeholder { name: _, typ } => **typ == *lhs,
-                                    _ => false,
+                    } else {
+                        // Completion
+                        let lhs = prod.lhs;
+                        let waiting_keys: Vec<ItemKey> = self.sets[item.key.start]
+                            .keys()
+                            .filter(|k| {
+                                let p = &self.grammar.productions[k.prod_id];
+                                if k.dot < p.rhs.len() {
+                                    match &p.rhs[k.dot] {
+                                        Symbol::NonTerminal(name) => name == &lhs,
+                                        Symbol::Placeholder { name: _, typ } => **typ == *lhs,
+                                        _ => false,
+                                    }
+                                } else {
+                                    false
                                 }
-                            } else {
-                                false
-                            }
-                        })
-                        .cloned()
-                        .collect();
+                            })
+                            .cloned()
+                            .collect();
 
-                    for wk in waiting_keys {
-                        let mut new_it = Item::new(wk.prod_id, wk.dot + 1, wk.start);
-                        let bp = BackPtr {
-                            child: item.key.clone(),
-                            at: wk.dot,
-                        };
-                        new_it.bps.push(vec![bp]);
-                        if self.add_item(pos, new_it) {
-                            changed = true;
+                        for wk in waiting_keys {
+                            let mut new_it = Item::new(wk.prod_id, wk.dot + 1, wk.start);
+                            let bp = BackPtr {
+                                child: item.key.clone(),
+                                at: wk.dot,
+                            };
+                            new_it.bps.push(vec![bp]);
+                            if self.add_item(pos, new_it) {
+                                changed = true;
+                            }
                         }
                     }
                 }
             }
         }
     }
-}
-
 
     pub fn accepted(&self, start: &str) -> bool {
         let n = self.tokens.len();
