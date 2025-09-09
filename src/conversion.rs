@@ -41,7 +41,7 @@ impl<'gr> From<grammar_parser::Production<'gr>> for recognizer::Production<'gr> 
                 .into_iter()
                 .flat_map(Into::<Vec<recognizer::Symbol>>::into)
                 .collect(),
-            out: prod.out
+            out: prod.out,
         }
     }
 }

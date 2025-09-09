@@ -66,37 +66,45 @@ pub enum Symbol<'gr> {
 pub struct Production<'gr> {
     pub lhs: Str<'gr>,
     pub rhs: Vec<Symbol<'gr>>,
-    pub out: OutSpec<'gr>
+    pub out: OutSpec<'gr>,
 }
 
 #[derive(Debug, Clone)]
 pub enum OutSpec<'gr> {
     Value(Value<'gr>),
     Resource {
-        typ : &'gr str,
-        fields : HashMap<&'gr str,Value<'gr>>
+        typ: &'gr str,
+        fields: HashMap<&'gr str, Value<'gr>>,
     },
-    None
+    None,
 }
 
 impl<'gr> From<Option<RuleRhs<'gr>>> for OutSpec<'gr> {
     fn from(value: Option<RuleRhs<'gr>>) -> Self {
         match value {
-            Some(value) => {
-                match value {
-                    RuleRhs::Type(typ) => OutSpec::Resource { typ: *typ, fields: HashMap::new() },
-                    RuleRhs::TypeWithFields { name : typ, fields: rule_fields  } => {
-                        let mut hash: HashMap<&'gr str,Value<'gr>> = HashMap::new();
-                        rule_fields.iter().for_each(|(k,v)| {hash.insert(&k, *v);});
-                        OutSpec::Resource { typ: *typ, fields: hash }
-                    },
+            Some(value) => match value {
+                RuleRhs::Type(typ) => OutSpec::Resource {
+                    typ: *typ,
+                    fields: HashMap::new(),
+                },
+                RuleRhs::TypeWithFields {
+                    name: typ,
+                    fields: rule_fields,
+                } => {
+                    let mut hash: HashMap<&'gr str, Value<'gr>> = HashMap::new();
+                    rule_fields.iter().for_each(|(k, v)| {
+                        hash.insert(&k, *v);
+                    });
+                    OutSpec::Resource {
+                        typ: *typ,
+                        fields: hash,
+                    }
                 }
             },
-            None => Self::None
+            None => Self::None,
         }
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct Grammar<'gr> {
@@ -132,7 +140,7 @@ impl<'gr> From<&Rule<'gr>> for Production<'gr> {
         Self {
             lhs: value.lhs,
             rhs: value.pattern.clone(),
-            out: OutSpec::from(value.rhs.clone())
+            out: OutSpec::from(value.rhs.clone()),
         }
     }
 }
@@ -226,8 +234,7 @@ fn pattern_in_quotes<'gr>()
         .labelled("pattern in quotes")
 }
 
-fn string_literal<'gr>() -> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Rich<'gr, char>>>
-{
+fn string_literal<'gr>() -> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Rich<'gr, char>>> {
     just('"')
         .ignore_then(any().filter(|c| *c != '"').repeated().to_slice())
         .then_ignore(just('"'))
@@ -235,8 +242,7 @@ fn string_literal<'gr>() -> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Ri
         .labelled("string literal")
 }
 
-fn number_literal<'gr>() -> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Rich<'gr, char>>>
-{
+fn number_literal<'gr>() -> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Rich<'gr, char>>> {
     numbers::number_literal()
         .map_with(|fv, extra| match fv {
             Value::IntegerLiteral(i) => Value::IntegerLiteral(i),
