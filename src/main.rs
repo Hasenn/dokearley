@@ -1,15 +1,17 @@
 use chumsky::Parser;
-use dokearley::grammar_parser;
-use grammar_parser::grammar;
-use grammar_parser::highlighter::{highlight_tokens, HighlightKind};
 use colored::*;
+use dokearley::grammar_parser;
+use grammar_parser::highlighter::{HighlightKind, highlight_tokens};
+use grammar_parser::rules;
 use std::io::{self, Read};
 
 fn main() {
     let mut input = String::new();
-    io::stdin().read_to_string(&mut input).expect("Failed to read input");
+    io::stdin()
+        .read_to_string(&mut input)
+        .expect("Failed to read input");
 
-    let result = grammar().parse(&input);
+    let result = rules().parse(&input);
 
     if result.has_errors() {
         let errors: Vec<_> = result.errors().collect();
@@ -60,7 +62,7 @@ fn main() {
 
     // Print remaining text
     if cursor < input.len() {
-        print!("{}", &input[cursor..]);
+        print!("{}", &input[cursor..].dimmed());
     }
 
     println!();

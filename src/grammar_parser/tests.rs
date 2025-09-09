@@ -8,7 +8,7 @@ mod tests {
     #[test]
     fn test_simple_terminal_rule() {
         let input = r#"Greeting : "Hello" => Message"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(!result.has_errors());
         let rules = result.output().expect("Should have output");
@@ -34,7 +34,7 @@ mod tests {
     #[test]
     fn test_placeholder_rule() {
         let input = r#"DoSomething : "{action:String}" => Action"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(!result.has_errors());
         let rules = result.output().expect("Should have output");
@@ -55,7 +55,7 @@ mod tests {
     #[test]
     fn test_placeholder_rule_other_arrow() {
         let input = r#"DoSomething : "{action:String}" -> Action"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(!result.has_errors());
         let rules = result.output().expect("Should have output");
@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn test_mixed_pattern() {
         let input = r#"DoSomethingElse : "{verb:String} {object:String}" => Action"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(!result.has_errors());
         let rules = result.output().expect("Should have output");
@@ -110,7 +110,7 @@ mod tests {
     #[test]
     fn test_type_with_fields_identifiers() {
         let input = r#"Person : "Default Person" => Person{name:"defaultName", age:"defaultAge"}"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(!result.has_errors());
         let rules = result.output().expect("Should have output");
@@ -124,14 +124,14 @@ mod tests {
             assert_eq!(fields.len(), 2);
 
             assert_eq!(fields[0].0, "name");
-            if let FieldValue::StringLiteral(val) = &fields[0].1 {
+            if let Value::StringLiteral(val) = &fields[0].1 {
                 assert_eq!(val, "defaultName");
             } else {
                 panic!("Expected string literal for name field");
             }
 
             assert_eq!(fields[1].0, "age");
-            if let FieldValue::StringLiteral(val) = &fields[1].1 {
+            if let Value::StringLiteral(val) = &fields[1].1 {
                 assert_eq!(val, "defaultAge");
             } else {
                 panic!("Expected string literal for age field");
@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn test_type_with_mixed_field_values() {
         let input = r#"SomeThing : "a pattern {name:Name}" => AnyThing{surname:"hey", num:2506, flt:12.565, ref:someRef}"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(!result.has_errors());
         let rules = result.output().expect("Should have output");
@@ -160,28 +160,28 @@ mod tests {
             assert_eq!(fields.len(), 4);
 
             assert_eq!(fields[0].0, "surname");
-            if let FieldValue::StringLiteral(val) = &fields[0].1 {
+            if let Value::StringLiteral(val) = &fields[0].1 {
                 assert_eq!(val, "hey");
             } else {
                 panic!("Expected string literal for surname");
             }
 
             assert_eq!(fields[1].0, "num");
-            if let FieldValue::IntegerLiteral(val) = &fields[1].1 {
+            if let Value::IntegerLiteral(val) = &fields[1].1 {
                 assert_eq!(*val, 2506);
             } else {
                 panic!("Expected integer literal for num");
             }
 
             assert_eq!(fields[2].0, "flt");
-            if let FieldValue::FloatLiteral(val) = &fields[2].1 {
+            if let Value::FloatLiteral(val) = &fields[2].1 {
                 assert_eq!(*val, 12.565);
             } else {
                 panic!("Expected float literal for flt");
             }
 
             assert_eq!(fields[3].0, "ref");
-            if let FieldValue::Identifier(val) = &fields[3].1 {
+            if let Value::Identifier(val) = &fields[3].1 {
                 assert_eq!(val, "someRef");
             } else {
                 panic!("Expected identifier for ref");
@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn test_implicit_output_type() {
         let input = r#"Something : "pattern with {place:Holders}""#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(!result.has_errors());
         let rules = result.output().expect("Should have output");
@@ -219,7 +219,7 @@ DoSomethingElse : "{verb:String} {object:String}" => Action
 
 Person : "Default Person" => Person{name:"name", age:"age"}
 "#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
         assert!(!result.has_errors());
         let rules = result.output().expect("Should have output");
         assert_eq!(rules.len(), 5);
@@ -240,7 +240,7 @@ Person : "Default Person" => Person{name:"name", age:"age"}
     #[test]
     fn test_whitespace_handling() {
         let input = r#"  Rule   :   "pattern"   =>   Type  "#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(!result.has_errors());
         let rules = result.output().expect("Should have output");
@@ -259,7 +259,7 @@ Person : "Default Person" => Person{name:"name", age:"age"}
     #[test]
     fn test_fields_with_whitespace() {
         let input = r#"Test : "test" => Type{ field1 : "value1" , field2 : 42 , field3 : 3.14 }"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(!result.has_errors());
         let rules = result.output().expect("Should have output");
@@ -279,7 +279,7 @@ Person : "Default Person" => Person{name:"name", age:"age"}
     #[test]
     fn test_rule_with_no_rhs_type_defaults_to_lhs() {
         let input = r#"Thing : "foo""#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(!result.has_errors());
         let rules = result.output().unwrap();
@@ -296,7 +296,7 @@ Person : "Default Person" => Person{name:"name", age:"age"}
     #[test]
     fn test_rule_with_structured_rhs() {
         let input = r#"Entity : "create" => Entity{name:"Bob", age:42}"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(!result.has_errors());
         let rules = result.output().unwrap();
@@ -308,13 +308,13 @@ Person : "Default Person" => Person{name:"name", age:"age"}
 
             assert_eq!(fields[0].0, "name");
             match &fields[0].1 {
-                FieldValue::StringLiteral(s) => assert_eq!(*s, "Bob"),
+                Value::StringLiteral(s) => assert_eq!(*s, "Bob"),
                 _ => panic!("Expected string literal"),
             }
 
             assert_eq!(fields[1].0, "age");
             match &fields[1].1 {
-                FieldValue::IntegerLiteral(n) => assert_eq!(*n, 42),
+                Value::IntegerLiteral(n) => assert_eq!(*n, 42),
                 _ => panic!("Expected integer literal"),
             }
         } else {
@@ -325,7 +325,7 @@ Person : "Default Person" => Person{name:"name", age:"age"}
     #[test]
     fn test_float_literal_in_fields() {
         let input = r#"Measure : "m" => Measure{value:3.14}"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(!result.has_errors());
         let rules = result.output().unwrap();
@@ -334,7 +334,7 @@ Person : "Default Person" => Person{name:"name", age:"age"}
         if let Some(RuleRhs::TypeWithFields { fields, .. }) = &rules[0].rhs {
             assert_eq!(fields[0].0, "value");
             match &fields[0].1 {
-                FieldValue::FloatLiteral(f) => assert!((*f - 3.14).abs() < 1e-6),
+                Value::FloatLiteral(f) => assert!((*f - 3.14).abs() < 1e-6),
                 _ => panic!("Expected float literal"),
             }
         } else {
@@ -345,7 +345,7 @@ Person : "Default Person" => Person{name:"name", age:"age"}
     #[test]
     fn test_multiple_placeholders_no_space() {
         let input = r#"Cmd : "{first:Int}{second:Int}" => Action"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(!result.has_errors());
         let rules = result.output().unwrap();
@@ -370,7 +370,7 @@ Person : "Default Person" => Person{name:"name", age:"age"}
     #[test]
     fn test_empty_pattern() {
         let input = r#"Empty : "" => Nothing"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(!result.has_errors());
 
@@ -392,15 +392,16 @@ Person : "Default Person" => Person{name:"name", age:"age"}
         negflt:-2.5e-1
     }"#;
 
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
         assert!(!result.has_errors());
 
-        let fields =
-            if let Some(RuleRhs::TypeWithFields { fields, .. }) = &result.output().unwrap()[0].rhs {
-                fields
-            } else {
-                panic!("Expected Some(TypeWithFields)");
-            };
+        let fields = if let Some(RuleRhs::TypeWithFields { fields, .. }) =
+            &result.output().unwrap()[0].rhs
+        {
+            fields
+        } else {
+            panic!("Expected Some(TypeWithFields)");
+        };
 
         assert_eq!(fields.len(), 8);
     }

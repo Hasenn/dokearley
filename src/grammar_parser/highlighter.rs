@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::grammar_parser::{FieldValue, Rule, RuleRhs, Str, Symbol};
+use crate::grammar_parser::{Value, Rule, RuleRhs, Str, Symbol};
 
 /// What kind of token this is for highlighting
 #[derive(Debug, Clone, Copy)]
@@ -70,10 +70,10 @@ pub fn highlight_tokens<'a>(input: &'a str, rules: &[Rule<'a>]) -> Vec<Highlight
                     for (field_name, field_val) in fields {
                         tokens.push(span_token(field_name, HighlightKind::FieldName));
                         match field_val {
-                            FieldValue::Identifier(s) => {
+                            Value::Identifier(s) => {
                                 tokens.push(span_token(s, HighlightKind::Identifier));
                             }
-                            FieldValue::StringLiteral(s) => {
+                            Value::StringLiteral(s) => {
                                 // Emit quotes + content
                                 let span = s.span.clone();
                                 tokens.push(HighlightToken {
@@ -88,10 +88,10 @@ pub fn highlight_tokens<'a>(input: &'a str, rules: &[Rule<'a>]) -> Vec<Highlight
                                     kind: HighlightKind::StringLiteral,
                                 });
                             }
-                            FieldValue::IntegerLiteral(_) => {
+                            Value::IntegerLiteral(_) => {
                                 // spans not yet carried — TODO
                             }
-                            FieldValue::FloatLiteral(_) => {
+                            Value::FloatLiteral(_) => {
                                 // spans not yet carried — TODO
                             }
                         }

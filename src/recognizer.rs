@@ -1,12 +1,14 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use crate::grammar_parser::OutSpec;
+pub use crate::grammar_parser::RuleRhs;
+pub use crate::grammar_parser::Value;
+
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
     pub start: usize,
     pub end: usize,
 }
-
-
 
 impl Span {
     pub fn new(start: usize, end: usize) -> Self {
@@ -21,26 +23,58 @@ impl std::fmt::Display for Span {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Symbol<'gram> {
-    Terminal(&'gram str),
-    Placeholder { name: &'gram str, typ: &'gram str },
-    NonTerminal(&'gram str),
+pub enum Symbol<'gr> {
+    Terminal(&'gr str),
+    Placeholder { name: &'gr str, typ: &'gr str },
+    NonTerminal(&'gr str),
 }
 
 #[derive(Debug, Clone)]
-pub struct Production<'gram> {
-    pub lhs: &'gram str,
-    pub rhs: Vec<Symbol<'gram>>,
+pub struct Production<'gr> {
+    pub lhs: &'gr str,
+    pub rhs: Vec<Symbol<'gr>>,
+    pub out: OutSpec<'gr>
 }
 
 #[derive(Debug, Clone)]
-pub struct Grammar<'gram> {
-    pub productions: Vec<Production<'gram>>,
-    pub start: &'gram str,
+pub struct Grammar<'gr> {
+    pub productions: Vec<Production<'gr>>,
 }
 
-impl<'gram> Grammar<'gram> {
-    pub fn prods_for(&'_ self, name: &str) -> Vec<(usize, &Production<'gram>)> {
+impl<'gr> Grammar<'gr> {
+    pub fn compute_nullable(&self) -> HashSet<&'gr str> {
+        let mut nullable = HashSet::new();
+        let mut changed = true;
+
+        while changed {
+            changed = false;
+
+            for prod in &self.productions {
+                // If LHS is already nullable, skip
+                if nullable.contains(prod.lhs) {
+                    continue;
+                }
+
+                // Check if all RHS symbols are nullable
+                let all_nullable = prod.rhs.iter().all(|sym| match sym {
+                    Symbol::NonTerminal(nt) => nullable.contains(nt),
+                    Symbol::Placeholder { name: _, typ } => nullable.contains(typ),
+                    Symbol::Terminal(_) => false, // Terminals are never nullable
+                });
+
+                if all_nullable {
+                    nullable.insert(prod.lhs);
+                    changed = true;
+                }
+            }
+        }
+
+        nullable
+    }
+}
+
+impl<'gr> Grammar<'gr> {
+    pub fn prods_for(&'_ self, name: &str) -> Vec<(usize, &Production<'gr>)> {
         self.productions
             .iter()
             .enumerate()
@@ -84,7 +118,7 @@ impl Item {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenKind {
-    Word,
+    Char,
     Int,
     Float,
     StringLit,
@@ -100,68 +134,84 @@ pub struct Token<'inp> {
 
 pub fn tokenize(input: &str) -> Vec<Token<'_>> {
     let mut tokens = vec![];
-    let mut i = 0;
-    let chars: Vec<char> = input.chars().collect();
-    while i < chars.len() {
-        let c = chars[i];
-        if c.is_whitespace() {
-            i += 1;
-            continue;
-        }
+    let mut byte_pos = 0;
+    let input_len = input.len();
+
+    while byte_pos < input_len {
+        let c = input[byte_pos..].chars().next().unwrap();
+        let char_len = c.len_utf8();
+        let start = byte_pos;
+
+        // String literal
         if c == '"' {
-            let start = i;
-            i += 1;
-            let str_start = i;
-            while i < chars.len() && chars[i] != '"' {
-                i += 1;
+            byte_pos += char_len;
+            let str_start = byte_pos;
+            while byte_pos < input_len {
+                let ch = input[byte_pos..].chars().next().unwrap();
+                if ch == '"' {
+                    break;
+                }
+                byte_pos += ch.len_utf8();
             }
-            let str_end = i;
-            let text: &str = &input[str_start..str_end];
+            let str_end = byte_pos;
+            let text = &input[str_start..str_end];
             tokens.push(Token {
                 kind: TokenKind::StringLit,
                 text,
-                span: Span::new(start, i + 1),
+                span: Span::new(start, str_end + 1),
             });
-            if i < chars.len() {
-                i += 1;
+            byte_pos += 1; // skip closing quote
+            continue;
+        }
+
+        // Number parsing (int or float)
+        if c.is_ascii_digit() {
+            let mut end_pos = byte_pos;
+            while end_pos < input_len {
+                let ch = input[end_pos..].chars().next().unwrap();
+                if !ch.is_ascii_digit() && ch != '.' {
+                    break;
+                }
+                end_pos += ch.len_utf8();
             }
+            let raw = &input[byte_pos..end_pos];
+            if raw.parse::<i64>().is_ok() {
+                tokens.push(Token {
+                    kind: TokenKind::Int,
+                    text: raw,
+                    span: Span::new(byte_pos, end_pos),
+                });
+            } else if raw.parse::<f64>().is_ok() {
+                tokens.push(Token {
+                    kind: TokenKind::Float,
+                    text: raw,
+                    span: Span::new(byte_pos, end_pos),
+                });
+            } else {
+                for ch in raw.chars() {
+                    let ch_start = byte_pos;
+                    let ch_end = ch_start + ch.len_utf8();
+                    tokens.push(Token {
+                        kind: TokenKind::Char,
+                        text: &input[ch_start..ch_end],
+                        span: Span::new(ch_start, ch_end),
+                    });
+                    byte_pos = ch_end;
+                }
+            }
+            byte_pos = end_pos;
             continue;
         }
-        let start = i;
-        while i < chars.len() && !chars[i].is_whitespace() && chars[i] != '"' {
-            i += 1;
-        }
-        let raw: &str = &input[start..i];
-        if raw.parse::<i64>().is_ok() {
-            tokens.push(Token {
-                kind: TokenKind::Int,
-                text: raw,
-                span: Span::new(start, i),
-            });
-            continue;
-        }
-        if raw.parse::<f64>().is_ok() {
-            tokens.push(Token {
-                kind: TokenKind::Float,
-                text: raw,
-                span: Span::new(start, i),
-            });
-            continue;
-        }
-        if raw.chars().all(|c| !c.is_alphanumeric()) {
-            tokens.push(Token {
-                kind: TokenKind::Punct,
-                text: raw,
-                span: Span::new(start, i),
-            });
-            continue;
-        }
+
+        // Default: single char token
         tokens.push(Token {
-            kind: TokenKind::Word,
-            text: raw,
-            span: Span::new(start, i),
+            kind: TokenKind::Char,
+            text: &input[start..start + char_len],
+            span: Span::new(start, start + char_len),
         });
+        byte_pos += char_len;
     }
+
     tokens
 }
 
@@ -170,19 +220,69 @@ fn is_builtin(typ: &str, tok: &Token<'_>) -> bool {
         "int" => tok.kind == TokenKind::Int,
         "float" => tok.kind == TokenKind::Float,
         "string" | "str" => tok.kind == TokenKind::StringLit,
-        "word" => tok.kind == TokenKind::Word,
         _ => false,
     }
 }
 
-pub struct Chart<'gram, 'inp> {
+pub struct Chart<'gr, 'inp> {
     pub sets: Vec<HashMap<ItemKey, Item>>,
     pub tokens: Vec<Token<'inp>>,
-    pub grammar: &'gram Grammar<'gram>,
+    pub grammar: &'gr Grammar<'gr>,
+    pub start: &'inp str,
 }
 
-impl<'gram, 'inp> Chart<'gram, 'inp> {
-    pub fn new(grammar: &'gram Grammar<'gram>, tokens: Vec<Token<'inp>>) -> Self {
+impl<'gr, 'inp> Chart<'gr, 'inp> {
+    /// Advance the dot over any nullable symbols starting at the current dot position.
+    pub fn add_nullable_items(
+        &mut self,
+        item: Item,
+        pos: usize,
+        nullable: &std::collections::HashSet<&'gr str>,
+    ) {
+        let prod = &self.grammar.productions[item.key.prod_id];
+        let dot = item.key.dot;
+
+        while dot < prod.rhs.len() {
+            let sym = &prod.rhs[dot];
+            let is_nullable = match sym {
+                Symbol::NonTerminal(nt) => nullable.contains(nt),
+                Symbol::Placeholder { name: _, typ } => nullable.contains(typ),
+                Symbol::Terminal(_) => false,
+            };
+
+            if is_nullable {
+                // Advance dot over nullable symbol
+                let mut new_item = item.clone();
+                new_item.key.dot += 1;
+
+                // Add a dummy backpointer for the skipped symbol
+                let child_key = ItemKey {
+                    prod_id: usize::MAX, // special marker for nullable
+                    dot: 0,
+                    start: pos,
+                };
+                let bp = BackPtr {
+                    child: child_key,
+                    at: new_item.key.dot - 1,
+                };
+                new_item.bps.push(vec![bp]);
+
+                // Insert into chart
+                if self.add_item(pos, new_item.clone()) {
+                    // If added, recursively continue advancing over subsequent nullables
+                    self.add_nullable_items(new_item.clone(), pos, nullable);
+                }
+                // Stop current loop; recursion will handle further nullable sequence
+                break;
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+impl<'gr, 'inp> Chart<'gr, 'inp> {
+    pub fn new(grammar: &'gr Grammar<'gr>, tokens: Vec<Token<'inp>>, start: &'inp str) -> Self {
         let n = tokens.len();
         let mut sets = Vec::with_capacity(n + 1);
         for _ in 0..=n {
@@ -192,6 +292,7 @@ impl<'gram, 'inp> Chart<'gram, 'inp> {
             sets,
             tokens,
             grammar,
+            start,
         }
     }
 
@@ -206,10 +307,16 @@ impl<'gram, 'inp> Chart<'gram, 'inp> {
         }
     }
 
-    pub fn recognize(&mut self) {
-        for (pid, _) in self.grammar.prods_for(self.grammar.start) {
+    pub fn recognize(&mut self, start: &str) {
+        // Precompute nullable nonterminals
+        let nullable = self.grammar.compute_nullable();
+
+        // Initialize chart with start productions
+        for (pid, _) in self.grammar.prods_for(start) {
             let it = Item::new(pid, 0, 0);
-            self.add_item(0, it);
+            self.add_item(0, it.clone());
+            // Advance dot for nullable prefixes
+            self.add_nullable_items(it, 0, &nullable);
         }
 
         let n = self.tokens.len();
@@ -218,20 +325,24 @@ impl<'gram, 'inp> Chart<'gram, 'inp> {
             while changed {
                 changed = false;
                 let keys: Vec<ItemKey> = self.sets[pos].keys().cloned().collect();
+
                 for key in keys {
                     let item = match self.sets[pos].get(&key) {
                         Some(it) => it.clone(),
                         None => continue,
                     };
+
                     let prod = &self.grammar.productions[item.key.prod_id];
+
                     if item.key.dot < prod.rhs.len() {
                         let next = &prod.rhs[item.key.dot];
                         match next {
                             Symbol::NonTerminal(nt) => {
                                 for (pid, _) in self.grammar.prods_for(nt) {
-                                    let new_it = Item::new(pid, 0, pos);
-                                    if self.add_item(pos, new_it) {
+                                    let mut new_it = Item::new(pid, 0, pos);
+                                    if self.add_item(pos, new_it.clone()) {
                                         changed = true;
+                                        self.add_nullable_items(new_it, pos, &nullable);
                                     }
                                 }
                             }
@@ -280,14 +391,16 @@ impl<'gram, 'inp> Chart<'gram, 'inp> {
                                 } else {
                                     for (pid, _) in self.grammar.prods_for(typ) {
                                         let new_it = Item::new(pid, 0, pos);
-                                        if self.add_item(pos, new_it) {
+                                        if self.add_item(pos, new_it.clone()) {
                                             changed = true;
+                                            self.add_nullable_items(new_it, pos, &nullable);
                                         }
                                     }
                                 }
                             }
                         }
                     } else {
+                        // Completion
                         let lhs = prod.lhs;
                         let waiting_keys: Vec<ItemKey> = self.sets[item.key.start]
                             .keys()
@@ -323,12 +436,387 @@ impl<'gram, 'inp> Chart<'gram, 'inp> {
         }
     }
 
-    pub fn accepted(&self) -> bool {
+    pub fn accepted(&self, start: &str) -> bool {
         let n = self.tokens.len();
         self.sets[n].values().any(|it| {
             it.key.start == 0
                 && it.key.dot == self.grammar.productions[it.key.prod_id].rhs.len()
-                && self.grammar.productions[it.key.prod_id].lhs == self.grammar.start
+                && self.grammar.productions[it.key.prod_id].lhs == start
         })
+    }
+}
+
+#[cfg(test)]
+mod recognizer_tests {
+    use super::*;
+
+    // Dummy OutSpec for testing
+    fn dummy_outspec<'gr>() -> OutSpec<'gr> {
+        OutSpec::Value(Value::FloatLiteral(21.1)) // assuming Value::Unit exists
+    }
+
+    /// A helper grammar:
+    ///
+    /// Expr -> Term '+' Expr
+    /// Expr -> Term
+    /// Term -> {n:Int}
+    /// Term -> {x:Float}
+    /// Term -> {s:String}
+    fn make_basic_expr_grammar<'gr>() -> Grammar<'gr> {
+        Grammar {
+            productions: vec![
+                Production {
+                    lhs: "Expr",
+                    rhs: vec![
+                        Symbol::NonTerminal("Term"),
+                        Symbol::Terminal("+"),
+                        Symbol::NonTerminal("Expr"),
+                    ],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "Expr",
+                    rhs: vec![Symbol::NonTerminal("Term")],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "Term",
+                    rhs: vec![Symbol::Placeholder {
+                        name: "n",
+                        typ: "Int",
+                    }],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "Term",
+                    rhs: vec![Symbol::Placeholder {
+                        name: "x",
+                        typ: "Float",
+                    }],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "Term",
+                    rhs: vec![Symbol::Placeholder {
+                        name: "s",
+                        typ: "String",
+                    }],
+                    out: dummy_outspec(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn recognize_simple_int_expr() {
+        let grammar = make_basic_expr_grammar();
+        let toks = tokenize("42"); 
+        let mut chart = Chart::new(&grammar, toks, "Expr");
+        chart.recognize("Expr");
+        assert!(chart.accepted("Expr"));
+    }
+
+    #[test]
+    fn recognize_simple_float_expr() {
+        let grammar = make_basic_expr_grammar();
+        let toks = tokenize("3.14"); 
+        let mut chart = Chart::new(&grammar, toks, "Expr");
+        chart.recognize("Expr");
+        assert!(chart.accepted("Expr"));
+    }
+
+    #[test]
+    fn recognize_simple_string_expr() {
+        let grammar = make_basic_expr_grammar();
+        let toks = tokenize(r#""hello""#); 
+        let mut chart = Chart::new(&grammar, toks, "Expr");
+        chart.recognize("Expr");
+        assert!(chart.accepted("Expr"));
+    }
+
+    #[test]
+    fn recognize_addition_no_spaces() {
+        let grammar = make_basic_expr_grammar();
+        let toks = tokenize(r#"42+3.14"#); 
+        let mut chart = Chart::new(&grammar, toks, "Expr");
+        chart.recognize("Expr");
+        assert!(chart.accepted("Expr"));
+    }
+
+    #[test]
+    fn reject_incomplete_addition() {
+        let grammar = make_basic_expr_grammar();
+        let toks = tokenize(r#"42+"#); 
+        let mut chart = Chart::new(&grammar, toks, "Expr");
+        chart.recognize("Expr");
+        assert!(!chart.accepted("Expr"));
+    }
+
+    #[test]
+    fn placeholder_bound_to_nonterminal() {
+        let grammar = Grammar {
+            productions: vec![
+                Production {
+                    lhs: "S",
+                    rhs: vec![Symbol::NonTerminal("A")],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "A",
+                    rhs: vec![Symbol::Placeholder { name: "x", typ: "B" }],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "B",
+                    rhs: vec![Symbol::Terminal("x")],
+                    out: dummy_outspec(),
+                },
+            ],
+        };
+
+        let toks = tokenize("x");
+        let mut chart = Chart::new(&grammar, toks, "S");
+        chart.recognize("S");
+        assert!(chart.accepted("S"));
+    }
+
+    #[test]
+    fn nested_nonterminal_recursion() {
+        let grammar = Grammar {
+            productions: vec![
+                Production {
+                    lhs: "Start",
+                    rhs: vec![Symbol::NonTerminal("A")],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "A",
+                    rhs: vec![Symbol::Terminal("a"), Symbol::NonTerminal("B")],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "B",
+                    rhs: vec![Symbol::Terminal("b")],
+                    out: dummy_outspec(),
+                },
+            ],
+        };
+
+        let toks = tokenize("ab");
+        let mut chart = Chart::new(&grammar, toks, "Start");
+        chart.recognize("Start");
+        assert!(chart.accepted("Start"));
+    }
+
+    #[test]
+    fn multiple_productions_same_lhs() {
+        let grammar = Grammar {
+            productions: vec![
+                Production {
+                    lhs: "X",
+                    rhs: vec![Symbol::Terminal("x")],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "X",
+                    rhs: vec![Symbol::Terminal("y")],
+                    out: dummy_outspec(),
+                },
+            ],
+        };
+
+        let toks_x = tokenize("x");
+        let mut chart_x = Chart::new(&grammar, toks_x, "X");
+        chart_x.recognize("X");
+        assert!(chart_x.accepted("X"));
+
+        let toks_y = tokenize("y");
+        let mut chart_y = Chart::new(&grammar, toks_y, "X");
+        chart_y.recognize("X");
+        assert!(chart_y.accepted("X"));
+    }
+}
+
+
+#[cfg(test)]
+mod nullable_tests {
+    use super::*;
+
+    // Dummy OutSpec for testing
+    fn dummy_outspec<'gr>() -> OutSpec<'gr> {
+        OutSpec::Value(Value::FloatLiteral(520.)) // assuming Value::Unit exists
+    }
+
+    #[test]
+    fn empty_rhs_nullable() {
+        // Grammar: S -> ε
+        let grammar = Grammar {
+            productions: vec![Production {
+                lhs: "S",
+                rhs: vec![],
+                out: dummy_outspec(),
+            }],
+        };
+
+        let tokens = tokenize("");
+        let mut chart = Chart::new(&grammar, tokens, "S");
+        chart.recognize("S");
+        assert!(
+            chart.accepted("S"),
+            "Empty input should be accepted by empty-RHS rule"
+        );
+    }
+
+    #[test]
+    fn nullable_nonterminal_in_sequence() {
+        // Grammar:
+        // S -> A B
+        // A -> ε (nullable)
+        // B -> "x"
+        let grammar = Grammar {
+            productions: vec![
+                Production {
+                    lhs: "S",
+                    rhs: vec![Symbol::NonTerminal("A"), Symbol::NonTerminal("B")],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "A",
+                    rhs: vec![],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "B",
+                    rhs: vec![Symbol::Terminal("x")],
+                    out: dummy_outspec(),
+                },
+            ],
+        };
+
+        let tokens = tokenize("x");
+        let mut chart = Chart::new(&grammar, tokens, "S");
+        chart.recognize("S");
+        assert!(
+            chart.accepted("S"),
+            "Nullable A should allow 'x' to be accepted"
+        );
+    }
+
+    #[test]
+    fn multiple_nullable_in_sequence() {
+        // Grammar:
+        // S -> A B C
+        // A -> ε
+        // B -> ε
+        // C -> "y"
+        let grammar = Grammar {
+            productions: vec![
+                Production {
+                    lhs: "S",
+                    rhs: vec![
+                        Symbol::NonTerminal("A"),
+                        Symbol::NonTerminal("B"),
+                        Symbol::NonTerminal("C"),
+                    ],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "A",
+                    rhs: vec![],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "B",
+                    rhs: vec![],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "C",
+                    rhs: vec![Symbol::Terminal("y")],
+                    out: dummy_outspec(),
+                },
+            ],
+        };
+
+        let tokens = tokenize("y");
+        let mut chart = Chart::new(&grammar, tokens, "S");
+        chart.recognize("S");
+        assert!(
+            chart.accepted("S"),
+            "Nullable A and B should allow 'y' to be accepted"
+        );
+    }
+
+    #[test]
+    fn nullable_user_defined_placeholder() {
+        // Grammar:
+        // S -> {x:X} "b"
+        // X -> ε  (nullable user-defined type)
+        let grammar = Grammar {
+            productions: vec![
+                Production {
+                    lhs: "S",
+                    rhs: vec![
+                        Symbol::Placeholder { name: "x", typ: "X" },
+                        Symbol::Terminal("b"),
+                    ],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "X",
+                    rhs: vec![],
+                    out: dummy_outspec(),
+                }, // nullable user-defined type
+            ],
+        };
+
+        let tokens = tokenize("b");
+        let mut chart = Chart::new(&grammar, tokens, "S");
+        chart.recognize("S");
+        assert!(
+            chart.accepted("S"),
+            "Nullable user-defined placeholder should allow 'b'"
+        );
+    }
+
+    #[test]
+    fn nullable_mixed() {
+        // Grammar:
+        // S -> "a" B "c"
+        // B -> ε | "b"
+        let grammar = Grammar {
+            productions: vec![
+                Production {
+                    lhs: "S",
+                    rhs: vec![
+                        Symbol::Terminal("a"),
+                        Symbol::NonTerminal("B"),
+                        Symbol::Terminal("c"),
+                    ],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "B",
+                    rhs: vec![],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "B",
+                    rhs: vec![Symbol::Terminal("b")],
+                    out: dummy_outspec(),
+                },
+            ],
+        };
+
+        let tokens1 = tokenize("ac"); // B -> ε
+        let tokens2 = tokenize("abc"); // B -> "b"
+
+        let mut chart1 = Chart::new(&grammar, tokens1, "S");
+        chart1.recognize("S");
+        assert!(chart1.accepted("S"), "Should accept 'ac' with nullable B");
+
+        let mut chart2 = Chart::new(&grammar, tokens2, "S");
+        chart2.recognize("S");
+        assert!(chart2.accepted("S"), "Should accept 'abc' with B -> 'b'");
     }
 }

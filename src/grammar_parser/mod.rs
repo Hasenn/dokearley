@@ -5,15 +5,14 @@ mod tests;
 #[cfg(test)]
 mod tests_rejections;
 
-
 use chumsky::{
     container::Container,
     prelude::*,
     text::{inline_whitespace, newline},
 };
-use std::ops::Range;
+use std::{collections::HashMap, ops::Range};
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Str<'gr> {
     pub text: &'gr str,
     pub span: SimpleSpan,
@@ -56,8 +55,7 @@ impl<'gr> PartialEq<&str> for Str<'gr> {
     }
 }
 
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Symbol<'gr> {
     Terminal(Str<'gr>),
     Placeholder { name: Str<'gr>, typ: Str<'gr> },
@@ -68,17 +66,45 @@ pub enum Symbol<'gr> {
 pub struct Production<'gr> {
     pub lhs: Str<'gr>,
     pub rhs: Vec<Symbol<'gr>>,
+    pub out: OutSpec<'gr>
 }
+
+#[derive(Debug, Clone)]
+pub enum OutSpec<'gr> {
+    Value(Value<'gr>),
+    Resource {
+        typ : &'gr str,
+        fields : HashMap<&'gr str,Value<'gr>>
+    },
+    None
+}
+
+impl<'gr> From<Option<RuleRhs<'gr>>> for OutSpec<'gr> {
+    fn from(value: Option<RuleRhs<'gr>>) -> Self {
+        match value {
+            Some(value) => {
+                match value {
+                    RuleRhs::Type(typ) => OutSpec::Resource { typ: *typ, fields: HashMap::new() },
+                    RuleRhs::TypeWithFields { name : typ, fields: rule_fields  } => {
+                        let mut hash: HashMap<&'gr str,Value<'gr>> = HashMap::new();
+                        rule_fields.iter().for_each(|(k,v)| {hash.insert(&k, *v);});
+                        OutSpec::Resource { typ: *typ, fields: hash }
+                    },
+                }
+            },
+            None => Self::None
+        }
+    }
+}
+
 
 #[derive(Debug, Clone)]
 pub struct Grammar<'gr> {
     pub productions: Vec<Production<'gr>>,
-    pub start: Str<'gr>,
 }
 
-
-#[derive(Debug, Clone)]
-pub enum FieldValue<'gr> {
+#[derive(Debug, Clone, Copy)]
+pub enum Value<'gr> {
     Identifier(Str<'gr>),
     StringLiteral(Str<'gr>),
     IntegerLiteral(i64),
@@ -90,7 +116,7 @@ pub enum RuleRhs<'gr> {
     Type(Str<'gr>),
     TypeWithFields {
         name: Str<'gr>,
-        fields: Vec<(Str<'gr>, FieldValue<'gr>)>,
+        fields: Vec<(Str<'gr>, Value<'gr>)>,
     },
 }
 
@@ -101,7 +127,37 @@ pub struct Rule<'gr> {
     pub rhs: Option<RuleRhs<'gr>>,
 }
 
-pub fn grammar<'gr>() -> impl Parser<'gr, &'gr str, Vec<Rule<'gr>>, extra::Err<Rich<'gr, char>>> {
+impl<'gr> From<&Rule<'gr>> for Production<'gr> {
+    fn from(value: &Rule<'gr>) -> Self {
+        Self {
+            lhs: value.lhs,
+            rhs: value.pattern.clone(),
+            out: OutSpec::from(value.rhs.clone())
+        }
+    }
+}
+
+impl<'gr> From<&Vec<Rule<'gr>>> for Grammar<'gr> {
+    fn from(value: &Vec<Rule<'gr>>) -> Self {
+        Self {
+            productions: value.iter().map(Into::<Production>::into).collect(),
+        }
+    }
+}
+
+/// Chumsky Parser for a Vec of Rules, applying defaults for optional RHS (You can expect RHS to be Some)
+pub fn rules<'gr>() -> impl Parser<'gr, &'gr str, Vec<Rule<'gr>>, extra::Err<Rich<'gr, char>>> {
+    rules_raw().map_with(|r, extra| {
+        r.clone().iter_mut().for_each(|r| {
+            if let None = r.rhs {
+                r.rhs = Some(RuleRhs::Type(r.lhs.clone()))
+            }
+        });
+        r
+    })
+}
+
+pub fn rules_raw<'gr>() -> impl Parser<'gr, &'gr str, Vec<Rule<'gr>>, extra::Err<Rich<'gr, char>>> {
     rule()
         .padded_by(inline_whitespace())
         .separated_by(
@@ -131,6 +187,7 @@ fn rule<'gr>() -> impl Parser<'gr, &'gr str, Rule<'gr>, extra::Err<Rich<'gr, cha
             pattern,
             rhs: opt_rhs,
         })
+        .labelled("rule")
 }
 
 fn ident<'gr>() -> impl Parser<'gr, &'gr str, Str<'gr>, extra::Err<Rich<'gr, char>>> {
@@ -144,6 +201,7 @@ fn placeholder<'gr>() -> impl Parser<'gr, &'gr str, Symbol<'gr>, extra::Err<Rich
         .then(ident().padded())
         .then_ignore(just('}'))
         .map(|(name, typ)| Symbol::Placeholder { name, typ })
+        .labelled("placeholder")
 }
 
 fn terminal_text<'gr>() -> impl Parser<'gr, &'gr str, Symbol<'gr>, extra::Err<Rich<'gr, char>>> {
@@ -153,6 +211,7 @@ fn terminal_text<'gr>() -> impl Parser<'gr, &'gr str, Symbol<'gr>, extra::Err<Ri
         .at_least(1)
         .to_slice()
         .map_with(|s, extra| Symbol::Terminal(Str::new(s, extra.span())))
+        .labelled("terminal text")
 }
 
 fn pattern_in_quotes<'gr>()
@@ -164,30 +223,40 @@ fn pattern_in_quotes<'gr>()
                 .collect(),
         )
         .then_ignore(just('"').padded())
+        .labelled("pattern in quotes")
 }
 
-fn string_literal<'gr>() -> impl Parser<'gr, &'gr str, FieldValue<'gr>, extra::Err<Rich<'gr, char>>> {
+fn string_literal<'gr>() -> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Rich<'gr, char>>>
+{
     just('"')
         .ignore_then(any().filter(|c| *c != '"').repeated().to_slice())
         .then_ignore(just('"'))
-        .map_with(|s, extra| FieldValue::StringLiteral(Str::new(s, extra.span())))
+        .map_with(|s, extra| Value::StringLiteral(Str::new(s, extra.span())))
+        .labelled("string literal")
 }
 
-fn number_literal<'gr>() -> impl Parser<'gr, &'gr str, FieldValue<'gr>, extra::Err<Rich<'gr, char>>> {
-    numbers::number_literal().map_with(|fv, extra| match fv {
-        FieldValue::IntegerLiteral(i) => FieldValue::IntegerLiteral(i),
-        FieldValue::FloatLiteral(f) => FieldValue::FloatLiteral(f),
-        FieldValue::Identifier(s) => FieldValue::Identifier(s),
-        FieldValue::StringLiteral(s) => FieldValue::StringLiteral(s),
-    })
+fn number_literal<'gr>() -> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Rich<'gr, char>>>
+{
+    numbers::number_literal()
+        .map_with(|fv, extra| match fv {
+            Value::IntegerLiteral(i) => Value::IntegerLiteral(i),
+            Value::FloatLiteral(f) => Value::FloatLiteral(f),
+            Value::Identifier(s) => Value::Identifier(s),
+            Value::StringLiteral(s) => Value::StringLiteral(s),
+        })
+        .labelled("number literal")
 }
 
-fn field_value<'gr>() -> impl Parser<'gr, &'gr str, FieldValue<'gr>, extra::Err<Rich<'gr, char>>> {
-    choice((string_literal(), number_literal(), ident().map(FieldValue::Identifier)))
+fn field_value<'gr>() -> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Rich<'gr, char>>> {
+    choice((
+        string_literal(),
+        number_literal(),
+        ident().map(Value::Identifier),
+    ))
 }
 
 fn fields_parser<'gr>()
--> impl Parser<'gr, &'gr str, Vec<(Str<'gr>, FieldValue<'gr>)>, extra::Err<Rich<'gr, char>>> {
+-> impl Parser<'gr, &'gr str, Vec<(Str<'gr>, Value<'gr>)>, extra::Err<Rich<'gr, char>>> {
     ident()
         .padded()
         .then_ignore(just(':').padded())
@@ -195,6 +264,7 @@ fn fields_parser<'gr>()
         .separated_by(just(',').padded())
         .collect()
         .map_with(|fields, _span| fields)
+        .labelled("fields")
 }
 
 fn out_spec_parser<'gr>() -> impl Parser<'gr, &'gr str, RuleRhs<'gr>, extra::Err<Rich<'gr, char>>> {
@@ -212,4 +282,5 @@ fn out_spec_parser<'gr>() -> impl Parser<'gr, &'gr str, RuleRhs<'gr>, extra::Err
             Some(fields) => RuleRhs::TypeWithFields { name, fields },
             None => RuleRhs::Type(name),
         })
+        .labelled("output specification")
 }

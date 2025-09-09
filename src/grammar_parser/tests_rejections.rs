@@ -4,7 +4,7 @@ use std::path::Path;
 
 use chumsky::Parser;
 
-use crate::grammar_parser::grammar;
+use crate::grammar_parser::rules;
 
 #[cfg(test)]
 mod invalid_input_tests {
@@ -36,7 +36,7 @@ mod invalid_input_tests {
     #[test]
     fn test_unclosed_quote() {
         let input = r#"Rule : "unclosed => Type"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(
             result.has_errors(),
@@ -48,7 +48,7 @@ mod invalid_input_tests {
     #[test]
     fn test_missing_colon() {
         let input = r#"Rule "pattern" => Type"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(
             result.has_errors(),
@@ -60,7 +60,7 @@ mod invalid_input_tests {
     #[test]
     fn test_missing_arrow() {
         let input = r#"Rule : "pattern" Type"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(
             result.has_errors(),
@@ -72,7 +72,7 @@ mod invalid_input_tests {
     #[test]
     fn test_invalid_field_syntax() {
         let input = r#"Rule : "pattern" => Type{field}"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(
             result.has_errors(),
@@ -84,7 +84,7 @@ mod invalid_input_tests {
     #[test]
     fn test_empty_placeholder_name() {
         let input = r#"Rule : "{}:Int" => Type"#;
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(
             result.has_errors(),
@@ -96,7 +96,7 @@ mod invalid_input_tests {
     #[test]
     fn test_invalid_number_in_field() {
         let input = r#"Rule : "pattern" => Type{num:0b102}"#; // '2' invalid in binary
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(
             result.has_errors(),
@@ -108,7 +108,7 @@ mod invalid_input_tests {
     #[test]
     fn test_unexpected_character_in_pattern() {
         let input = r#"Rule : "Hello {" => Type"#; // unclosed brace inside quoted pattern
-        let result = grammar().parse(input);
+        let result = rules().parse(input);
 
         assert!(
             result.has_errors(),

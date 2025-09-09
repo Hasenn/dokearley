@@ -1,4 +1,4 @@
-use super::FieldValue;
+use super::Value;
 use chumsky::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -11,7 +11,7 @@ enum NumLit<'gr> {
 }
 
 pub(crate) fn number_literal<'gr>()
--> impl Parser<'gr, &'gr str, FieldValue<'gr>, extra::Err<Rich<'gr, char>>> {
+-> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Rich<'gr, char>>> {
     let sign = just('-').or(just('+')).or_not();
 
     let bin = sign
@@ -53,7 +53,7 @@ pub(crate) fn number_literal<'gr>()
     choice((float, bin, oct, hex, dec)).try_map(|num, span| match num {
         NumLit::Float(lit) => lit
             .parse::<f64>()
-            .map(FieldValue::FloatLiteral)
+            .map(Value::FloatLiteral)
             .map_err(|e| Rich::custom(span, format!("Invalid float: {}", e))),
 
         NumLit::DecInt(digits, sign) => {
@@ -62,7 +62,7 @@ pub(crate) fn number_literal<'gr>()
             if sign == Some('-') {
                 val = -val;
             }
-            Ok(FieldValue::IntegerLiteral(val))
+            Ok(Value::IntegerLiteral(val))
         }
 
         NumLit::BinInt(digits, sign) => {
@@ -71,7 +71,7 @@ pub(crate) fn number_literal<'gr>()
             if sign == Some('-') {
                 val = -val;
             }
-            Ok(FieldValue::IntegerLiteral(val))
+            Ok(Value::IntegerLiteral(val))
         }
 
         NumLit::OctInt(digits, sign) => {
@@ -80,7 +80,7 @@ pub(crate) fn number_literal<'gr>()
             if sign == Some('-') {
                 val = -val;
             }
-            Ok(FieldValue::IntegerLiteral(val))
+            Ok(Value::IntegerLiteral(val))
         }
 
         NumLit::HexInt(digits, sign) => {
@@ -89,7 +89,7 @@ pub(crate) fn number_literal<'gr>()
             if sign == Some('-') {
                 val = -val;
             }
-            Ok(FieldValue::IntegerLiteral(val))
+            Ok(Value::IntegerLiteral(val))
         }
     })
 }
@@ -122,7 +122,7 @@ mod tests {
             );
 
             match result.output().unwrap() {
-                FieldValue::IntegerLiteral(n) => {
+                Value::IntegerLiteral(n) => {
                     assert_eq!(*n, expected, "Wrong value for '{}'", input)
                 }
                 other => panic!("Expected integer literal for '{}', got {:?}", input, other),
@@ -151,7 +151,7 @@ mod tests {
             );
 
             match result.output().unwrap() {
-                FieldValue::IntegerLiteral(n) => {
+                Value::IntegerLiteral(n) => {
                     assert_eq!(*n, expected, "Wrong binary value for '{}'", input)
                 }
                 other => panic!(
@@ -179,7 +179,7 @@ mod tests {
             );
 
             match result.output().unwrap() {
-                FieldValue::IntegerLiteral(n) => {
+                Value::IntegerLiteral(n) => {
                     assert_eq!(*n, expected, "Wrong octal value for '{}'", input)
                 }
                 other => panic!(
@@ -207,7 +207,7 @@ mod tests {
             );
 
             match result.output().unwrap() {
-                FieldValue::IntegerLiteral(n) => {
+                Value::IntegerLiteral(n) => {
                     assert_eq!(*n, expected, "Wrong hex value for '{}'", input)
                 }
                 other => panic!(
@@ -241,7 +241,7 @@ mod tests {
             );
 
             match result.output().unwrap() {
-                FieldValue::FloatLiteral(f) => {
+                Value::FloatLiteral(f) => {
                     assert_eq!(*f, expected, "Wrong float value for '{}'", input)
                 }
                 other => panic!("Expected float literal for '{}', got {:?}", input, other),
@@ -271,7 +271,7 @@ mod tests {
             );
 
             match result.output().unwrap() {
-                FieldValue::FloatLiteral(f) => {
+                Value::FloatLiteral(f) => {
                     assert_eq!(*f, expected, "Wrong scientific float for '{}'", input)
                 }
                 other => panic!("Expected float literal for '{}', got {:?}", input, other),
