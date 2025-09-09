@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use thiserror::Error;
+
 use crate::recognizer::{Chart, Grammar, ItemKey, OutSpec, Production, Symbol, Token, Value};
 
 /// A node in the parse forest
@@ -20,6 +22,28 @@ pub enum ForestNode<'gr, 'inp> {
 #[derive(Debug)]
 pub struct ParseForest<'gr, 'inp> {
     roots: HashMap<&'gr str, Vec<Rc<ForestNode<'gr, 'inp>>>>,
+}
+
+/// Errors that can occur while building a parse forest
+#[derive(Debug, Error)]
+pub enum ForestError {
+    /// A required token was not found in the input
+    #[error("Missing token at index {0}")]
+    MissingToken(usize),
+
+    /// A required item (production at a specific dot and start) was not found in the chart
+    #[error(
+        "Missing item in chart: prod_id={prod_id}, dot={dot}, start={start}"
+    )]
+    MissingItem {
+        prod_id: usize,
+        dot: usize,
+        start: usize,
+    },
+
+    /// No completed items were found for a start symbol
+    #[error("No completed items found for start production: {0:?}")]
+    NoCompletedStartItem(ItemKey),
 }
 
 impl<'gr, 'inp> ParseForest<'gr, 'inp> {
