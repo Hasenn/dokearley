@@ -63,6 +63,7 @@ dependencies = [
  "chumsky",
  "colored",
  "thiserror",
+ "unicode-segmentation",
 ]
 
 [[package]]

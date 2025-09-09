@@ -1,8 +1,7 @@
-use std::collections::{HashMap, HashSet};
-use crate::grammar_parser::OutSpec;
+pub use crate::grammar_parser::OutSpec;
 pub use crate::grammar_parser::RuleRhs;
 pub use crate::grammar_parser::Value;
-
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Span {
@@ -29,11 +28,23 @@ pub enum Symbol<'gr> {
     NonTerminal(&'gr str),
 }
 
+use std::fmt;
+
+impl<'gr> fmt::Display for Symbol<'gr> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Symbol::Terminal(s) => write!(f, "{}", s),
+            Symbol::Placeholder { name, typ } => write!(f, "<{}:{}>", name, typ),
+            Symbol::NonTerminal(s) => write!(f, "{}", s),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Production<'gr> {
     pub lhs: &'gr str,
     pub rhs: Vec<Symbol<'gr>>,
-    pub out: OutSpec<'gr>
+    pub out: OutSpec<'gr>,
 }
 
 #[derive(Debug, Clone)]
@@ -446,22 +457,66 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
     }
 }
 
+use unicode_segmentation::UnicodeSegmentation;
+
+impl<'gr, 'inp> Chart<'gr, 'inp> {
+    pub fn print_chart(&self) {
+        // For each Earley set
+        for (i, set) in self.sets.iter().enumerate() {
+            println!("\n=== {} ===", i);
+
+            // If the set is empty, skip
+            if set.is_empty() {
+                continue;
+            }
+
+            // Collect formatted lines first (for column alignment)
+            let mut lines = Vec::new();
+            let mut lhs_width = 0;
+
+            for (key, item) in set {
+                let prod = &self.grammar.productions[key.prod_id];
+                let lhs = prod.lhs;
+                lhs_width = lhs_width.max(lhs.len());
+
+                // Build RHS with dot
+                let mut rhs = Vec::new();
+                for (j, sym) in prod.rhs.iter().enumerate() {
+                    if j == key.dot {
+                        rhs.push("•".to_string());
+                    }
+                    rhs.push(format!("{}", sym));
+                }
+                if key.dot == prod.rhs.len() {
+                    rhs.push("•".to_string());
+                }
+                let rhs_str = rhs.join(" ");
+
+                let line = format!(
+                    "{:<width$} -> {:<30} ({})",
+                    lhs,
+                    rhs_str,
+                    key.start,
+                    width = lhs_width
+                );
+                lines.push(line);
+            }
+
+            for l in lines {
+                println!("{}", l);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod recognizer_tests {
     use super::*;
 
-    // Dummy OutSpec for testing
     fn dummy_outspec<'gr>() -> OutSpec<'gr> {
-        OutSpec::Value(Value::FloatLiteral(21.1)) // assuming Value::Unit exists
+        OutSpec::Value(Value::FloatLiteral(21.1))
     }
 
-    /// A helper grammar:
-    ///
-    /// Expr -> Term '+' Expr
-    /// Expr -> Term
-    /// Term -> {n:Int}
-    /// Term -> {x:Float}
-    /// Term -> {s:String}
     fn make_basic_expr_grammar<'gr>() -> Grammar<'gr> {
         Grammar {
             productions: vec![
@@ -510,45 +565,50 @@ mod recognizer_tests {
     #[test]
     fn recognize_simple_int_expr() {
         let grammar = make_basic_expr_grammar();
-        let toks = tokenize("42"); 
+        let toks = tokenize("42");
         let mut chart = Chart::new(&grammar, toks, "Expr");
         chart.recognize("Expr");
+        chart.print_chart();
         assert!(chart.accepted("Expr"));
     }
 
     #[test]
     fn recognize_simple_float_expr() {
         let grammar = make_basic_expr_grammar();
-        let toks = tokenize("3.14"); 
+        let toks = tokenize("3.14");
         let mut chart = Chart::new(&grammar, toks, "Expr");
         chart.recognize("Expr");
+        chart.print_chart();
         assert!(chart.accepted("Expr"));
     }
 
     #[test]
     fn recognize_simple_string_expr() {
         let grammar = make_basic_expr_grammar();
-        let toks = tokenize(r#""hello""#); 
+        let toks = tokenize(r#""hello""#);
         let mut chart = Chart::new(&grammar, toks, "Expr");
         chart.recognize("Expr");
+        chart.print_chart();
         assert!(chart.accepted("Expr"));
     }
 
     #[test]
     fn recognize_addition_no_spaces() {
         let grammar = make_basic_expr_grammar();
-        let toks = tokenize(r#"42+3.14"#); 
+        let toks = tokenize("42+3.14");
         let mut chart = Chart::new(&grammar, toks, "Expr");
         chart.recognize("Expr");
+        chart.print_chart();
         assert!(chart.accepted("Expr"));
     }
 
     #[test]
     fn reject_incomplete_addition() {
         let grammar = make_basic_expr_grammar();
-        let toks = tokenize(r#"42+"#); 
+        let toks = tokenize("42+");
         let mut chart = Chart::new(&grammar, toks, "Expr");
         chart.recognize("Expr");
+        chart.print_chart();
         assert!(!chart.accepted("Expr"));
     }
 
@@ -563,7 +623,10 @@ mod recognizer_tests {
                 },
                 Production {
                     lhs: "A",
-                    rhs: vec![Symbol::Placeholder { name: "x", typ: "B" }],
+                    rhs: vec![Symbol::Placeholder {
+                        name: "x",
+                        typ: "B",
+                    }],
                     out: dummy_outspec(),
                 },
                 Production {
@@ -577,6 +640,7 @@ mod recognizer_tests {
         let toks = tokenize("x");
         let mut chart = Chart::new(&grammar, toks, "S");
         chart.recognize("S");
+        chart.print_chart();
         assert!(chart.accepted("S"));
     }
 
@@ -605,6 +669,7 @@ mod recognizer_tests {
         let toks = tokenize("ab");
         let mut chart = Chart::new(&grammar, toks, "Start");
         chart.recognize("Start");
+        chart.print_chart();
         assert!(chart.accepted("Start"));
     }
 
@@ -628,28 +693,27 @@ mod recognizer_tests {
         let toks_x = tokenize("x");
         let mut chart_x = Chart::new(&grammar, toks_x, "X");
         chart_x.recognize("X");
+        chart_x.print_chart();
         assert!(chart_x.accepted("X"));
 
         let toks_y = tokenize("y");
         let mut chart_y = Chart::new(&grammar, toks_y, "X");
         chart_y.recognize("X");
+        chart_y.print_chart();
         assert!(chart_y.accepted("X"));
     }
 }
-
 
 #[cfg(test)]
 mod nullable_tests {
     use super::*;
 
-    // Dummy OutSpec for testing
     fn dummy_outspec<'gr>() -> OutSpec<'gr> {
-        OutSpec::Value(Value::FloatLiteral(520.)) // assuming Value::Unit exists
+        OutSpec::Value(Value::FloatLiteral(520.))
     }
 
     #[test]
     fn empty_rhs_nullable() {
-        // Grammar: S -> ε
         let grammar = Grammar {
             productions: vec![Production {
                 lhs: "S",
@@ -661,18 +725,12 @@ mod nullable_tests {
         let tokens = tokenize("");
         let mut chart = Chart::new(&grammar, tokens, "S");
         chart.recognize("S");
-        assert!(
-            chart.accepted("S"),
-            "Empty input should be accepted by empty-RHS rule"
-        );
+        chart.print_chart();
+        assert!(chart.accepted("S"));
     }
 
     #[test]
     fn nullable_nonterminal_in_sequence() {
-        // Grammar:
-        // S -> A B
-        // A -> ε (nullable)
-        // B -> "x"
         let grammar = Grammar {
             productions: vec![
                 Production {
@@ -696,19 +754,12 @@ mod nullable_tests {
         let tokens = tokenize("x");
         let mut chart = Chart::new(&grammar, tokens, "S");
         chart.recognize("S");
-        assert!(
-            chart.accepted("S"),
-            "Nullable A should allow 'x' to be accepted"
-        );
+        chart.print_chart();
+        assert!(chart.accepted("S"));
     }
 
     #[test]
     fn multiple_nullable_in_sequence() {
-        // Grammar:
-        // S -> A B C
-        // A -> ε
-        // B -> ε
-        // C -> "y"
         let grammar = Grammar {
             productions: vec![
                 Production {
@@ -741,23 +792,21 @@ mod nullable_tests {
         let tokens = tokenize("y");
         let mut chart = Chart::new(&grammar, tokens, "S");
         chart.recognize("S");
-        assert!(
-            chart.accepted("S"),
-            "Nullable A and B should allow 'y' to be accepted"
-        );
+        chart.print_chart();
+        assert!(chart.accepted("S"));
     }
 
     #[test]
     fn nullable_user_defined_placeholder() {
-        // Grammar:
-        // S -> {x:X} "b"
-        // X -> ε  (nullable user-defined type)
         let grammar = Grammar {
             productions: vec![
                 Production {
                     lhs: "S",
                     rhs: vec![
-                        Symbol::Placeholder { name: "x", typ: "X" },
+                        Symbol::Placeholder {
+                            name: "x",
+                            typ: "X",
+                        },
                         Symbol::Terminal("b"),
                     ],
                     out: dummy_outspec(),
@@ -766,24 +815,19 @@ mod nullable_tests {
                     lhs: "X",
                     rhs: vec![],
                     out: dummy_outspec(),
-                }, // nullable user-defined type
+                },
             ],
         };
 
         let tokens = tokenize("b");
         let mut chart = Chart::new(&grammar, tokens, "S");
         chart.recognize("S");
-        assert!(
-            chart.accepted("S"),
-            "Nullable user-defined placeholder should allow 'b'"
-        );
+        chart.print_chart();
+        assert!(chart.accepted("S"));
     }
 
     #[test]
     fn nullable_mixed() {
-        // Grammar:
-        // S -> "a" B "c"
-        // B -> ε | "b"
         let grammar = Grammar {
             productions: vec![
                 Production {
@@ -808,15 +852,154 @@ mod nullable_tests {
             ],
         };
 
-        let tokens1 = tokenize("ac"); // B -> ε
-        let tokens2 = tokenize("abc"); // B -> "b"
+        let tokens1 = tokenize("ac");
+        let tokens2 = tokenize("abc");
 
         let mut chart1 = Chart::new(&grammar, tokens1, "S");
         chart1.recognize("S");
-        assert!(chart1.accepted("S"), "Should accept 'ac' with nullable B");
+        chart1.print_chart();
+        assert!(chart1.accepted("S"));
 
         let mut chart2 = Chart::new(&grammar, tokens2, "S");
         chart2.recognize("S");
-        assert!(chart2.accepted("S"), "Should accept 'abc' with B -> 'b'");
+        chart2.print_chart();
+        assert!(chart2.accepted("S"));
+    }
+}
+
+#[cfg(test)]
+mod complex_expr_tests {
+    use super::*;
+
+    fn dummy_outspec<'gr>() -> OutSpec<'gr> {
+        OutSpec::Value(Value::FloatLiteral(999.))
+    }
+
+    /// Grammar for a small arithmetic language:
+    /// Expr    -> Expr '+' Term
+    /// Expr    -> Expr '-' Term
+    /// Expr    -> Term
+    /// Term    -> Term '*' Factor
+    /// Term    -> Term '/' Factor
+    /// Term    -> Factor
+    /// Factor  -> Number
+    /// Factor  -> '(' Expr ')'
+    /// Number  -> {n:Int}
+    /// Number  -> {x:Float}
+    fn make_expr_grammar<'gr>() -> Grammar<'gr> {
+        Grammar {
+            productions: vec![
+                // Expr
+                Production {
+                    lhs: "Expr",
+                    rhs: vec![
+                        Symbol::NonTerminal("Expr"),
+                        Symbol::Terminal("+"),
+                        Symbol::NonTerminal("Term"),
+                    ],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "Expr",
+                    rhs: vec![
+                        Symbol::NonTerminal("Expr"),
+                        Symbol::Terminal("-"),
+                        Symbol::NonTerminal("Term"),
+                    ],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "Expr",
+                    rhs: vec![Symbol::NonTerminal("Term")],
+                    out: dummy_outspec(),
+                },
+                // Term
+                Production {
+                    lhs: "Term",
+                    rhs: vec![
+                        Symbol::NonTerminal("Term"),
+                        Symbol::Terminal("*"),
+                        Symbol::NonTerminal("Factor"),
+                    ],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "Term",
+                    rhs: vec![
+                        Symbol::NonTerminal("Term"),
+                        Symbol::Terminal("/"),
+                        Symbol::NonTerminal("Factor"),
+                    ],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "Term",
+                    rhs: vec![Symbol::NonTerminal("Factor")],
+                    out: dummy_outspec(),
+                },
+                // Factor
+                Production {
+                    lhs: "Factor",
+                    rhs: vec![Symbol::NonTerminal("Number")],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "Factor",
+                    rhs: vec![
+                        Symbol::Terminal("("),
+                        Symbol::NonTerminal("Expr"),
+                        Symbol::Terminal(")"),
+                    ],
+                    out: dummy_outspec(),
+                },
+                // Number
+                Production {
+                    lhs: "Number",
+                    rhs: vec![Symbol::Placeholder {
+                        name: "n",
+                        typ: "Int",
+                    }],
+                    out: dummy_outspec(),
+                },
+                Production {
+                    lhs: "Number",
+                    rhs: vec![Symbol::Placeholder {
+                        name: "x",
+                        typ: "Float",
+                    }],
+                    out: dummy_outspec(),
+                },
+            ],
+        }
+    }
+
+    #[test]
+    fn recognize_nested_expression() {
+        let grammar = make_expr_grammar();
+        let toks = tokenize("(2+6)*4+2");
+        let mut chart = Chart::new(&grammar, toks, "Expr");
+        chart.recognize("Expr");
+        chart.print_chart();
+        assert!(chart.accepted("Expr"));
+    }
+
+    #[test]
+    fn recognize_expression_with_precedence() {
+        let grammar = make_expr_grammar();
+        let toks = tokenize("2+3*4-5");
+        let mut chart = Chart::new(&grammar, toks, "Expr");
+        chart.recognize("Expr");
+        chart.print_chart();
+        assert!(chart.accepted("Expr"));
+    }
+
+    #[test]
+    fn recognize_parenthesized_expression() {
+        let grammar = make_expr_grammar();
+        let toks = tokenize("(1+2)*(3+(4*5))");
+        let mut chart = Chart::new(&grammar, toks, "Expr");
+        chart.recognize("Expr");
+        chart.print_chart();
+        assert!(chart.accepted("Expr"));
     }
 }

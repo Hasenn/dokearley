@@ -77,6 +77,15 @@ pub enum OutSpec<'gr> {
         fields: HashMap<&'gr str, Value<'gr>>,
     },
     None,
+    Dict {
+        fields: HashMap<&'gr str, Value<'gr>>,
+    },
+}
+
+pub enum OutPut {
+    Int(i64),
+    Float(f64),
+    String(String),
 }
 
 impl<'gr> From<Option<RuleRhs<'gr>>> for OutSpec<'gr> {
