@@ -46,8 +46,10 @@ YouCan : "use multiple lines" => In {
 
 ```
 
-# Feature to do at some point
+# Feature to do at some point ?
 
 ```
 Effect : EffectComponent (that maps nicely to inheritance, should one decide to use some)
+
+Maybe{partially : "constructed"} => "something"
 ```
