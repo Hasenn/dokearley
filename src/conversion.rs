@@ -1,6 +1,6 @@
 use crate::{
     grammar_parser::{self, Rule},
-    recognizer::{self, RuleRhs},
+    recognizer::{self},
 };
 
 // In recognizer or a conversion module

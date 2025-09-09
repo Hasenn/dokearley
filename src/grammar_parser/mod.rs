@@ -6,11 +6,10 @@ mod tests;
 mod tests_rejections;
 
 use chumsky::{
-    container::Container,
     prelude::*,
     text::{inline_whitespace, newline},
 };
-use std::{collections::HashMap, ops::Range};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Str<'gr> {

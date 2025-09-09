@@ -350,7 +350,7 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
                         match next {
                             Symbol::NonTerminal(nt) => {
                                 for (pid, _) in self.grammar.prods_for(nt) {
-                                    let mut new_it = Item::new(pid, 0, pos);
+                                    let new_it = Item::new(pid, 0, pos);
                                     if self.add_item(pos, new_it.clone()) {
                                         changed = true;
                                         self.add_nullable_items(new_it, pos, &nullable);
@@ -457,7 +457,6 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
     }
 }
 
-use unicode_segmentation::UnicodeSegmentation;
 
 impl<'gr, 'inp> Chart<'gr, 'inp> {
     pub fn print_chart(&self) {

@@ -3,7 +3,7 @@ use std::rc::Rc;
 
 use thiserror::Error;
 
-use crate::recognizer::{Chart, Grammar, ItemKey, OutSpec, Production, Symbol, Token, Value};
+use crate::recognizer::{Chart, ItemKey, Token};
 
 /// A node in the parse forest
 #[derive(Debug)]
