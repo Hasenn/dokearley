@@ -35,7 +35,7 @@ fn span_token<'a>(s: &Str<'a>, kind: HighlightKind) -> HighlightToken<'a> {
 }
 
 /// Produce highlight tokens for the entire input & rules
-pub fn highlight_tokens<'a>(input: &'a str, rules: &[Rule<'a>]) -> Vec<HighlightToken<'a>> {
+pub fn highlight_tokens<'a>(_input: &'a str, rules: &[Rule<'a>]) -> Vec<HighlightToken<'a>> {
     let mut tokens = Vec::new();
 
     for rule in rules {

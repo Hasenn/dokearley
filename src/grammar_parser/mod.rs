@@ -163,7 +163,7 @@ impl<'gr> From<&Vec<Rule<'gr>>> for Grammar<'gr> {
 
 /// Chumsky Parser for a Vec of Rules, applying defaults for optional RHS (You can expect RHS to be Some)
 pub fn rules<'gr>() -> impl Parser<'gr, &'gr str, Vec<Rule<'gr>>, extra::Err<Rich<'gr, char>>> {
-    rules_raw().map_with(|r, extra| {
+    rules_raw().map_with(|r, _extra| {
         r.clone().iter_mut().for_each(|r| {
             if let None = r.rhs {
                 r.rhs = Some(RuleRhs::Type(r.lhs.clone()))
@@ -198,7 +198,7 @@ fn rule<'gr>() -> impl Parser<'gr, &'gr str, Rule<'gr>, extra::Err<Rich<'gr, cha
                 .ignore_then(out_spec_parser())
                 .or_not(),
         )
-        .map_with(|((lhs, pattern), opt_rhs), extra| Rule {
+        .map_with(|((lhs, pattern), opt_rhs), _extra| Rule {
             lhs,
             pattern,
             rhs: opt_rhs,
@@ -252,7 +252,7 @@ fn string_literal<'gr>() -> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Ri
 
 fn number_literal<'gr>() -> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Rich<'gr, char>>> {
     numbers::number_literal()
-        .map_with(|fv, extra| match fv {
+        .map_with(|fv, _extra| match fv {
             Value::IntegerLiteral(i) => Value::IntegerLiteral(i),
             Value::FloatLiteral(f) => Value::FloatLiteral(f),
             Value::Identifier(s) => Value::Identifier(s),

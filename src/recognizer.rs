@@ -473,7 +473,7 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
             let mut lines = Vec::new();
             let mut lhs_width = 0;
 
-            for (key, item) in set {
+            for (key, _item) in set {
                 let prod = &self.grammar.productions[key.prod_id];
                 let lhs = prod.lhs;
                 lhs_width = lhs_width.max(lhs.len());
