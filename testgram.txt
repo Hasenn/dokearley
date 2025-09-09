@@ -4,4 +4,4 @@ Greeting : "Hi" => Message
 DoSomething : "{action:String}" -> Action
 DoSomethingElse : "{verb:String} {object:String}" => Action
 
-Person : "Default Person" => Person{name: "name" , age: "age" }
+Person : "Default Person" => Person{name: "name" , age: 350, height : 2.0e-3 }
