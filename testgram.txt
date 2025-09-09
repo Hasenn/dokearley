@@ -1,0 +1,7 @@
+Greeting : "Hello" => Message
+Greeting : "Hi" => Message
+
+DoSomething : "{action:String}" -> Action
+DoSomethingElse : "{verb:String} {object:String}" => Action
+
+Person : "Default Person" => Person{name: "name" , age: "age" }
