@@ -124,14 +124,14 @@ mod tests {
             assert_eq!(fields.len(), 2);
 
             assert_eq!(fields[0].0, "name");
-            if let Value::StringLiteral(val) = &fields[0].1 {
+            if let ValueSpec::StringLiteral(val) = &fields[0].1 {
                 assert_eq!(val, "defaultName");
             } else {
                 panic!("Expected string literal for name field");
             }
 
             assert_eq!(fields[1].0, "age");
-            if let Value::StringLiteral(val) = &fields[1].1 {
+            if let ValueSpec::StringLiteral(val) = &fields[1].1 {
                 assert_eq!(val, "defaultAge");
             } else {
                 panic!("Expected string literal for age field");
@@ -160,28 +160,28 @@ mod tests {
             assert_eq!(fields.len(), 4);
 
             assert_eq!(fields[0].0, "surname");
-            if let Value::StringLiteral(val) = &fields[0].1 {
+            if let ValueSpec::StringLiteral(val) = &fields[0].1 {
                 assert_eq!(val, "hey");
             } else {
                 panic!("Expected string literal for surname");
             }
 
             assert_eq!(fields[1].0, "num");
-            if let Value::IntegerLiteral(val) = &fields[1].1 {
+            if let ValueSpec::IntegerLiteral(val) = &fields[1].1 {
                 assert_eq!(*val, 2506);
             } else {
                 panic!("Expected integer literal for num");
             }
 
             assert_eq!(fields[2].0, "flt");
-            if let Value::FloatLiteral(val) = &fields[2].1 {
+            if let ValueSpec::FloatLiteral(val) = &fields[2].1 {
                 assert_eq!(*val, 12.565);
             } else {
                 panic!("Expected float literal for flt");
             }
 
             assert_eq!(fields[3].0, "ref");
-            if let Value::Identifier(val) = &fields[3].1 {
+            if let ValueSpec::Identifier(val) = &fields[3].1 {
                 assert_eq!(val, "someRef");
             } else {
                 panic!("Expected identifier for ref");
@@ -308,13 +308,13 @@ Person : "Default Person" => Person{name:"name", age:"age"}
 
             assert_eq!(fields[0].0, "name");
             match &fields[0].1 {
-                Value::StringLiteral(s) => assert_eq!(*s, "Bob"),
+                ValueSpec::StringLiteral(s) => assert_eq!(*s, "Bob"),
                 _ => panic!("Expected string literal"),
             }
 
             assert_eq!(fields[1].0, "age");
             match &fields[1].1 {
-                Value::IntegerLiteral(n) => assert_eq!(*n, 42),
+                ValueSpec::IntegerLiteral(n) => assert_eq!(*n, 42),
                 _ => panic!("Expected integer literal"),
             }
         } else {
@@ -334,7 +334,7 @@ Person : "Default Person" => Person{name:"name", age:"age"}
         if let Some(RuleRhs::TypeWithFields { fields, .. }) = &rules[0].rhs {
             assert_eq!(fields[0].0, "value");
             match &fields[0].1 {
-                Value::FloatLiteral(f) => assert!((*f - 3.14).abs() < 1e-6),
+                ValueSpec::FloatLiteral(f) => assert!((*f - 3.14).abs() < 1e-6),
                 _ => panic!("Expected float literal"),
             }
         } else {

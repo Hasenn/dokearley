@@ -70,21 +70,27 @@ pub struct Production<'gr> {
 
 #[derive(Debug, Clone)]
 pub enum OutSpec<'gr> {
-    Value(Value<'gr>),
+    // A value corresponding to a basic type
+    Value(ValueSpec<'gr>),
+    // A resource with a type and optionally fixed fields
     Resource {
         typ: &'gr str,
-        fields: HashMap<&'gr str, Value<'gr>>,
+        fields: HashMap<&'gr str, ValueSpec<'gr>>,
     },
-    None,
-    Dict {
-        fields: HashMap<&'gr str, Value<'gr>>,
-    },
+    // Values that should be propagated as fields in their parent.
+    Propagate,
+    // Transparent rules that yield their single nonterminal's value (Disjunction)
+    Transparent
 }
 
 pub enum OutPut {
     Int(i64),
     Float(f64),
     String(String),
+    Resource {
+        type_name: String,
+        fields: HashMap<String, OutPut>,
+    },
 }
 
 impl<'gr> From<Option<RuleRhs<'gr>>> for OutSpec<'gr> {
@@ -99,7 +105,7 @@ impl<'gr> From<Option<RuleRhs<'gr>>> for OutSpec<'gr> {
                     name: typ,
                     fields: rule_fields,
                 } => {
-                    let mut hash: HashMap<&'gr str, Value<'gr>> = HashMap::new();
+                    let mut hash: HashMap<&'gr str, ValueSpec<'gr>> = HashMap::new();
                     rule_fields.iter().for_each(|(k, v)| {
                         hash.insert(&k, *v);
                     });
@@ -109,7 +115,7 @@ impl<'gr> From<Option<RuleRhs<'gr>>> for OutSpec<'gr> {
                     }
                 }
             },
-            None => Self::None,
+            None => Self::Propagate,
         }
     }
 }
@@ -120,7 +126,7 @@ pub struct Grammar<'gr> {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Value<'gr> {
+pub enum ValueSpec<'gr> {
     Identifier(Str<'gr>),
     StringLiteral(Str<'gr>),
     IntegerLiteral(i64),
@@ -132,7 +138,7 @@ pub enum RuleRhs<'gr> {
     Type(Str<'gr>),
     TypeWithFields {
         name: Str<'gr>,
-        fields: Vec<(Str<'gr>, Value<'gr>)>,
+        fields: Vec<(Str<'gr>, ValueSpec<'gr>)>,
     },
 }
 
@@ -242,35 +248,37 @@ fn pattern_in_quotes<'gr>()
         .labelled("pattern in quotes")
 }
 
-fn string_literal<'gr>() -> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Rich<'gr, char>>> {
+fn string_literal<'gr>() -> impl Parser<'gr, &'gr str, ValueSpec<'gr>, extra::Err<Rich<'gr, char>>>
+{
     just('"')
         .ignore_then(any().filter(|c| *c != '"').repeated().to_slice())
         .then_ignore(just('"'))
-        .map_with(|s, extra| Value::StringLiteral(Str::new(s, extra.span())))
+        .map_with(|s, extra| ValueSpec::StringLiteral(Str::new(s, extra.span())))
         .labelled("string literal")
 }
 
-fn number_literal<'gr>() -> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Rich<'gr, char>>> {
+fn number_literal<'gr>() -> impl Parser<'gr, &'gr str, ValueSpec<'gr>, extra::Err<Rich<'gr, char>>>
+{
     numbers::number_literal()
         .map_with(|fv, _extra| match fv {
-            Value::IntegerLiteral(i) => Value::IntegerLiteral(i),
-            Value::FloatLiteral(f) => Value::FloatLiteral(f),
-            Value::Identifier(s) => Value::Identifier(s),
-            Value::StringLiteral(s) => Value::StringLiteral(s),
+            ValueSpec::IntegerLiteral(i) => ValueSpec::IntegerLiteral(i),
+            ValueSpec::FloatLiteral(f) => ValueSpec::FloatLiteral(f),
+            ValueSpec::Identifier(s) => ValueSpec::Identifier(s),
+            ValueSpec::StringLiteral(s) => ValueSpec::StringLiteral(s),
         })
         .labelled("number literal")
 }
 
-fn field_value<'gr>() -> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Rich<'gr, char>>> {
+fn field_value<'gr>() -> impl Parser<'gr, &'gr str, ValueSpec<'gr>, extra::Err<Rich<'gr, char>>> {
     choice((
         string_literal(),
         number_literal(),
-        ident().map(Value::Identifier),
+        ident().map(ValueSpec::Identifier),
     ))
 }
 
 fn fields_parser<'gr>()
--> impl Parser<'gr, &'gr str, Vec<(Str<'gr>, Value<'gr>)>, extra::Err<Rich<'gr, char>>> {
+-> impl Parser<'gr, &'gr str, Vec<(Str<'gr>, ValueSpec<'gr>)>, extra::Err<Rich<'gr, char>>> {
     ident()
         .padded()
         .then_ignore(just(':').padded())

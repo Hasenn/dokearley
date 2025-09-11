@@ -1,4 +1,4 @@
-use super::Value;
+use super::ValueSpec;
 use chumsky::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -11,7 +11,7 @@ enum NumLit<'gr> {
 }
 
 pub(crate) fn number_literal<'gr>()
--> impl Parser<'gr, &'gr str, Value<'gr>, extra::Err<Rich<'gr, char>>> {
+-> impl Parser<'gr, &'gr str, ValueSpec<'gr>, extra::Err<Rich<'gr, char>>> {
     let sign = just('-').or(just('+')).or_not();
 
     let bin = sign
@@ -53,7 +53,7 @@ pub(crate) fn number_literal<'gr>()
     choice((float, bin, oct, hex, dec)).try_map(|num, span| match num {
         NumLit::Float(lit) => lit
             .parse::<f64>()
-            .map(Value::FloatLiteral)
+            .map(ValueSpec::FloatLiteral)
             .map_err(|e| Rich::custom(span, format!("Invalid float: {}", e))),
 
         NumLit::DecInt(digits, sign) => {
@@ -62,7 +62,7 @@ pub(crate) fn number_literal<'gr>()
             if sign == Some('-') {
                 val = -val;
             }
-            Ok(Value::IntegerLiteral(val))
+            Ok(ValueSpec::IntegerLiteral(val))
         }
 
         NumLit::BinInt(digits, sign) => {
@@ -71,7 +71,7 @@ pub(crate) fn number_literal<'gr>()
             if sign == Some('-') {
                 val = -val;
             }
-            Ok(Value::IntegerLiteral(val))
+            Ok(ValueSpec::IntegerLiteral(val))
         }
 
         NumLit::OctInt(digits, sign) => {
@@ -80,7 +80,7 @@ pub(crate) fn number_literal<'gr>()
             if sign == Some('-') {
                 val = -val;
             }
-            Ok(Value::IntegerLiteral(val))
+            Ok(ValueSpec::IntegerLiteral(val))
         }
 
         NumLit::HexInt(digits, sign) => {
@@ -89,7 +89,7 @@ pub(crate) fn number_literal<'gr>()
             if sign == Some('-') {
                 val = -val;
             }
-            Ok(Value::IntegerLiteral(val))
+            Ok(ValueSpec::IntegerLiteral(val))
         }
     })
 }
@@ -122,7 +122,7 @@ mod tests {
             );
 
             match result.output().unwrap() {
-                Value::IntegerLiteral(n) => {
+                ValueSpec::IntegerLiteral(n) => {
                     assert_eq!(*n, expected, "Wrong value for '{}'", input)
                 }
                 other => panic!("Expected integer literal for '{}', got {:?}", input, other),
@@ -151,7 +151,7 @@ mod tests {
             );
 
             match result.output().unwrap() {
-                Value::IntegerLiteral(n) => {
+                ValueSpec::IntegerLiteral(n) => {
                     assert_eq!(*n, expected, "Wrong binary value for '{}'", input)
                 }
                 other => panic!(
@@ -179,7 +179,7 @@ mod tests {
             );
 
             match result.output().unwrap() {
-                Value::IntegerLiteral(n) => {
+                ValueSpec::IntegerLiteral(n) => {
                     assert_eq!(*n, expected, "Wrong octal value for '{}'", input)
                 }
                 other => panic!(
@@ -207,7 +207,7 @@ mod tests {
             );
 
             match result.output().unwrap() {
-                Value::IntegerLiteral(n) => {
+                ValueSpec::IntegerLiteral(n) => {
                     assert_eq!(*n, expected, "Wrong hex value for '{}'", input)
                 }
                 other => panic!(
@@ -241,7 +241,7 @@ mod tests {
             );
 
             match result.output().unwrap() {
-                Value::FloatLiteral(f) => {
+                ValueSpec::FloatLiteral(f) => {
                     assert_eq!(*f, expected, "Wrong float value for '{}'", input)
                 }
                 other => panic!("Expected float literal for '{}', got {:?}", input, other),
@@ -271,7 +271,7 @@ mod tests {
             );
 
             match result.output().unwrap() {
-                Value::FloatLiteral(f) => {
+                ValueSpec::FloatLiteral(f) => {
                     assert_eq!(*f, expected, "Wrong scientific float for '{}'", input)
                 }
                 other => panic!("Expected float literal for '{}', got {:?}", input, other),

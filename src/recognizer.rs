@@ -1,6 +1,7 @@
 pub use crate::grammar_parser::OutSpec;
 pub use crate::grammar_parser::RuleRhs;
-pub use crate::grammar_parser::Value;
+pub use crate::grammar_parser::ValueSpec;
+use crate::parser::Value;
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -95,6 +96,112 @@ impl<'gr> Grammar<'gr> {
     }
 }
 
+impl<'gr> Grammar<'gr> {
+    /// Detect whether the grammar contains an infinite nullable cycle (a cycle
+    /// entirely through nullable nonterminals / placeholder types).
+    ///
+    /// This mirrors the OCaml `infinite_loop` you provided: compute the set of
+    /// nullable symbols, build edges from a nullable LHS to each nonterminal or
+    /// placeholder-type that appears in a production for that LHS whose RHS is
+    /// entirely nullable, and then check whether there is a directed cycle
+    /// reachable from some nullable symbol.
+    pub fn has_infinite_loop(&self) -> bool {
+        use std::collections::{HashMap, HashSet};
+
+        // 1 compute nullable set (nonterminal names that can produce epsilon)
+        let null_set: HashSet<&'gr str> = self.compute_nullable();
+
+        // quick exit: nothing nullable -> no nullable cycles
+        if null_set.is_empty() {
+            return false;
+        }
+
+        // 2 build adjacency map for nullable symbols:
+        //    for each nullable symbol `A`, find productions A -> rhs where
+        //    every symbol of rhs is nullable; from such a rhs gather all
+        //    nonterminals and placeholder types that appear -> edges A -> sym.
+        let mut adj: HashMap<&'gr str, Vec<&'gr str>> = HashMap::new();
+
+        for &sym in &null_set {
+            let mut children: HashSet<&'gr str> = HashSet::new();
+
+            for (_pid, prod) in self.prods_for(sym) {
+                // check if whole rhs is nullable
+                let rhs_all_nullable = prod.rhs.iter().all(|s| match s {
+                    Symbol::NonTerminal(nt) => null_set.contains(nt),
+                    Symbol::Placeholder { name: _, typ } => null_set.contains(typ),
+                    Symbol::Terminal(_) => false,
+                });
+
+                if rhs_all_nullable {
+                    // gather nonterminals / placeholder types from rhs
+                    for s in &prod.rhs {
+                        match s {
+                            Symbol::NonTerminal(nt) => {
+                                children.insert(nt);
+                            }
+                            Symbol::Placeholder { name: _, typ } => {
+                                children.insert(typ);
+                            }
+                            Symbol::Terminal(_) => { /* terminals shouldn't appear here */ }
+                        }
+                    }
+                }
+            }
+
+            // keep only children that are in the nullable set (we only care about cycles among nullable symbols)
+            let filtered: Vec<&'gr str> = children
+                .into_iter()
+                .filter(|c| null_set.contains(c))
+                .collect();
+            adj.insert(sym, filtered);
+        }
+
+        // 3 detect a directed cycle reachable from some node in null_set.
+        //    Use DFS with coloring (0 = unvisited, 1 = visiting, 2 = visited)
+        let mut color: HashMap<&'gr str, u8> = HashMap::new();
+        for &s in &null_set {
+            color.insert(s, 0);
+        }
+
+        fn dfs<'a>(
+            v: &'a str,
+            adj: &HashMap<&'a str, Vec<&'a str>>,
+            color: &mut HashMap<&'a str, u8>,
+        ) -> bool {
+            color.insert(v, 1); // visiting
+            if let Some(neighs) = adj.get(v) {
+                for &w in neighs {
+                    match color.get(w).copied().unwrap_or(0) {
+                        0 => {
+                            if dfs(w, adj, color) {
+                                return true;
+                            }
+                        }
+                        1 => {
+                            // found back-edge -> cycle
+                            return true;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            color.insert(v, 2); // done
+            false
+        }
+
+        for &s in &null_set {
+            if color.get(s).copied().unwrap_or(0) == 0 {
+                if dfs(s, &adj, &mut color) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ItemKey {
     pub prod_id: usize,
@@ -103,15 +210,8 @@ pub struct ItemKey {
 }
 
 #[derive(Debug, Clone)]
-pub struct BackPtr {
-    pub child: ItemKey,
-    pub at: usize,
-}
-
-#[derive(Debug, Clone)]
 pub struct Item {
     pub key: ItemKey,
-    pub bps: Vec<Vec<BackPtr>>,
 }
 
 impl Item {
@@ -122,7 +222,6 @@ impl Item {
                 dot,
                 start,
             },
-            bps: vec![],
         }
     }
 }
@@ -133,7 +232,6 @@ pub enum TokenKind {
     Int,
     Float,
     StringLit,
-    Punct,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -141,6 +239,23 @@ pub struct Token<'inp> {
     pub kind: TokenKind,
     pub text: &'inp str,
     pub span: Span,
+}
+
+impl<'inp> Token<'inp> {
+    /// Convert a token into a semantic value if it carries one.
+    /// Returns `None` for purely structural tokens like `Char`.
+    pub fn get_value<'gr>(&self) -> Option<Value<'gr, 'inp>> {
+        match self.kind {
+            TokenKind::Int => {
+                Some(Value::Integer(self.text.parse::<i64>().ok()?))
+            }
+            TokenKind::Float => {
+                Some(Value::Float(self.text.parse::<f64>().ok()?))
+            }
+            TokenKind::StringLit => Some(Value::String(self.text)),
+            TokenKind::Char => None, // structural only
+        }
+    }
 }
 
 pub fn tokenize(input: &str) -> Vec<Token<'_>> {
@@ -226,11 +341,20 @@ pub fn tokenize(input: &str) -> Vec<Token<'_>> {
     tokens
 }
 
-fn is_builtin(typ: &str, tok: &Token<'_>) -> bool {
+pub fn is_builtin(typ: &str, tok: &Token<'_>) -> bool {
     match typ.to_ascii_lowercase().as_str() {
         "int" => tok.kind == TokenKind::Int,
         "float" => tok.kind == TokenKind::Float,
         "string" | "str" => tok.kind == TokenKind::StringLit,
+        _ => false,
+    }
+}
+
+pub fn is_typ_builtin(typ: &str) -> bool {
+    match typ.to_ascii_lowercase().as_str() {
+        "int" => true,
+        "float" => true,
+        "string" | "str" => true,
         _ => false,
     }
 }
@@ -244,14 +368,9 @@ pub struct Chart<'gr, 'inp> {
 
 impl<'gr, 'inp> Chart<'gr, 'inp> {
     /// Advance the dot over any nullable symbols starting at the current dot position.
-    pub fn add_nullable_items(
-        &mut self,
-        item: Item,
-        pos: usize,
-        nullable: &std::collections::HashSet<&'gr str>,
-    ) {
+    pub fn add_nullable_items(&mut self, mut item: Item, pos: usize, nullable: &HashSet<&'gr str>) {
         let prod = &self.grammar.productions[item.key.prod_id];
-        let dot = item.key.dot;
+        let mut dot = item.key.dot;
 
         while dot < prod.rhs.len() {
             let sym = &prod.rhs[dot];
@@ -261,30 +380,17 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
                 Symbol::Terminal(_) => false,
             };
 
-            if is_nullable {
-                // Advance dot over nullable symbol
-                let mut new_item = item.clone();
-                new_item.key.dot += 1;
-
-                // Add a dummy backpointer for the skipped symbol
-                let child_key = ItemKey {
-                    prod_id: usize::MAX, // special marker for nullable
-                    dot: 0,
-                    start: pos,
-                };
-                let bp = BackPtr {
-                    child: child_key,
-                    at: new_item.key.dot - 1,
-                };
-                new_item.bps.push(vec![bp]);
-
-                // Insert into chart
-                if self.add_item(pos, new_item.clone()) {
-                    // If added, recursively continue advancing over subsequent nullables
-                    self.add_nullable_items(new_item.clone(), pos, nullable);
-                }
-                // Stop current loop; recursion will handle further nullable sequence
+            if !is_nullable {
                 break;
+            }
+
+            // Advance dot
+            dot += 1;
+            let new_item = Item::new(item.key.prod_id, dot, item.key.start);
+
+            if self.add_item(pos, new_item.clone()) {
+                // Continue with the new item for subsequent nullables
+                item = new_item;
             } else {
                 break;
             }
@@ -309,8 +415,7 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
 
     pub fn add_item(&mut self, pos: usize, item: Item) -> bool {
         let key = item.key.clone();
-        if let Some(existing) = self.sets[pos].get_mut(&key) {
-            existing.bps.extend(item.bps);
+        if self.sets[pos].contains_key(&key) {
             false
         } else {
             self.sets[pos].insert(key, item);
@@ -359,21 +464,11 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
                             }
                             Symbol::Terminal(lit) => {
                                 if pos < self.tokens.len() && self.tokens[pos].text == *lit {
-                                    let mut new_it = Item::new(
+                                    let new_it = Item::new(
                                         item.key.prod_id,
                                         item.key.dot + 1,
                                         item.key.start,
                                     );
-                                    let child = ItemKey {
-                                        prod_id: usize::MAX,
-                                        dot: 0,
-                                        start: pos,
-                                    };
-                                    let bp = BackPtr {
-                                        child,
-                                        at: item.key.dot,
-                                    };
-                                    new_it.bps.push(vec![bp]);
                                     if self.add_item(pos + 1, new_it) {
                                         changed = true;
                                     }
@@ -381,21 +476,11 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
                             }
                             Symbol::Placeholder { name: _, typ } => {
                                 if pos < self.tokens.len() && is_builtin(typ, &self.tokens[pos]) {
-                                    let mut new_it = Item::new(
+                                    let new_it = Item::new(
                                         item.key.prod_id,
                                         item.key.dot + 1,
                                         item.key.start,
                                     );
-                                    let child = ItemKey {
-                                        prod_id: usize::MAX - 1,
-                                        dot: 0,
-                                        start: pos,
-                                    };
-                                    let bp = BackPtr {
-                                        child,
-                                        at: item.key.dot,
-                                    };
-                                    new_it.bps.push(vec![bp]);
                                     if self.add_item(pos + 1, new_it) {
                                         changed = true;
                                     }
@@ -431,12 +516,7 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
                             .collect();
 
                         for wk in waiting_keys {
-                            let mut new_it = Item::new(wk.prod_id, wk.dot + 1, wk.start);
-                            let bp = BackPtr {
-                                child: item.key.clone(),
-                                at: wk.dot,
-                            };
-                            new_it.bps.push(vec![bp]);
+                            let new_it = Item::new(wk.prod_id, wk.dot + 1, wk.start);
                             if self.add_item(pos, new_it) {
                                 changed = true;
                             }
@@ -455,6 +535,19 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
                 && self.grammar.productions[it.key.prod_id].lhs == start
         })
     }
+}
+
+
+pub struct RuleHint<'gr> {
+    pub lhs: &'gr str,
+    pub remaining_rhs: Vec<Symbol<'gr>>,
+    pub start_pos: usize,
+}
+
+pub struct ParseError<'gr, 'inp> {
+    pub pos: usize,
+    pub found: Option<&'inp str>,
+    pub hints: Vec<RuleHint<'gr>>,
 }
 
 
@@ -508,12 +601,14 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
     }
 }
 
+// ... (tests remain the same, they only use recognition, not parsing)
+
 #[cfg(test)]
 mod recognizer_tests {
     use super::*;
 
     fn dummy_outspec<'gr>() -> OutSpec<'gr> {
-        OutSpec::Value(Value::FloatLiteral(21.1))
+        OutSpec::Value(ValueSpec::FloatLiteral(21.1))
     }
 
     fn make_basic_expr_grammar<'gr>() -> Grammar<'gr> {
@@ -708,7 +803,7 @@ mod nullable_tests {
     use super::*;
 
     fn dummy_outspec<'gr>() -> OutSpec<'gr> {
-        OutSpec::Value(Value::FloatLiteral(520.))
+        OutSpec::Value(ValueSpec::FloatLiteral(520.))
     }
 
     #[test]
@@ -871,7 +966,7 @@ mod complex_expr_tests {
     use super::*;
 
     fn dummy_outspec<'gr>() -> OutSpec<'gr> {
-        OutSpec::Value(Value::FloatLiteral(999.))
+        OutSpec::Value(ValueSpec::FloatLiteral(999.))
     }
 
     /// Grammar for a small arithmetic language:
