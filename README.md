@@ -1,50 +1,80 @@
 # Dokearley
 
-Earley parser and grammar parser for `Doke`. Will allow game-devs to write DSLs quickly to edit their data in natural-like language.
+Earley parser and grammar parser for `Doke`. Allows game-devs to write DSLs quickly to edit their data in natural-like language.
 
-Todo : Actual Earley parser, with the nullable fix. 
-We don't care about O(n^3) worst-case because a previous parser cuts everything into small statements,
-( an N input is divided in O(n) statements of bounded size, so total time is O(n) * Bound^3)
-
-Earley allows for a run-time parser-generation and parses any context-free grammar.
-
-Done : grammar-file parsing and syntax highlighting, for basic cases (no disjunction support yet, and a bug for optional RHS)
+Includes `dokedef`, a language to write those DSLs, and a parser to parse those DSLs, returning a Resource-like rust enum.
 
 
-## Dokedef specification
+## Example
 
-```mathematica
-Number Literal Examples
------------------------
-
-Decimal Integer (i64)     : -1627326
-Binary Integer (i64)      : +0b1010101010
-Octal Integer (i64)       : 0o070707
-Hexadecimal Integer (i64) : -0x021F0
-Floating-Point (f64)      : 1.54e-10 or -120. , etc...
-```
-
-Example grammar file ( Format tailored for game-making, not general-purpose lang-dev)
+Define a grammar for RPG-style item effects in a file, for example:
 
 ```
-Effect : "Deal {dmg : int}" => DamageEffect
-Effect : "{first : Effect}, then : {then : Effect}" => EffectThenEffect
+ItemEffect: "deal {amount:Int} damage" -> Damage
+ItemEffect: "heal for {amount:Int}" -> Heal
+ItemEffect: "apply {status:String}" -> ApplyStatus
+ItemEffect: "remove {status:String}" -> RemoveStatus
+ItemEffect: "increase {stat:String} by {amount:Int}" -> Buff 
+ItemEffect: "decrease {stat:String} by {amount:Int}" -> Debuff 
 
-NonTerminal : "pattern with {place : holders}" -> Type
-NonTerminal : "pattern with {place : holders}" -> PartiallyBuiltType{foo : "bar", bar : 2501}
-TerminalAndTypeAreTheSame : "No RHS needed to {put : Things} in the {type : Type}"
+ItemEffect: "to {target : Target} : {effect : ItemEffect}" -> TargetedEffect
 
-Hey : "ho"; Ho : "separators are optional";
+Target: "self" -> Target { kind: "self" }
+Target: "an ally" -> Target { kind: "ally" }
+Target: "an enemy" -> Target { kind: "enemy" }
+Target: "all allies" -> Target { kind: "allies" }
+Target: "all enemies" -> Target { kind: "enemies" }
+```
 
-# Comments are not yet supported, but will be like GDscript does it
+Then statements like these :
 
-YouCan : "use multiple lines" => In {
-  places : "where it's not too weird",
-  hopefully : "the syntax highlighter and the (future) linter will help you"
+```
+to self : heal for 7
+to an enemy : deal 7 damage
+to all allies : increase "strength" by 5
+remove "poison"
+```
+
+Will give you resources like these
+
+```
+TargetedEffect {
+  target: Target { kind: "self" },
+  effect: Heal { amount: 7 }
 }
 
+TargetedEffect {
+  target: Target { kind: "enemy" },
+  effect: Damage { amount: 7 }
+}
 
+TargetedEffect {
+  target: Target { kind: "allies" },
+  effect: Buff { stat: "strength", amount: 5 }
+}
+
+RemoveStatus { status: "poison" }
 ```
+
+
+# Notes
+
+It should be said that for ambiguous grammars, this parser is O(n^3). 
+Though in practice, this is meant for small statements of bounded size and therefore would still be linear.
+
+Earley is also quite efficient for this use case, because it moves forward without creating many items with long sequences of terminals.
+As this is meant for human-readable languages, there are a lot of terminals that structure the data, often way more than placeholders/non-terminals.
+
+Supports nullable rules (at the moment they are tested but don't have a definite syntax in the dokedef language)
+
+Gives a best attempt at a good error message, showing earley items that could have been meant, as we don't know the language in advance.
+
+As of now, in the user language, 102020 is always an int, and 65.5 a float, and they are treated as tokens. You can use 2. for floats that look like ints, but I admit it's not too great. I'll be working on this when I get to using the language.
+
+You will find that there are no bools. I will also add them, though probably only in output specs, as i'm sure anyone's ideal human readable DSL doesn't look like `Do something : true`, and more like `Do something`
+
+Currently case-sensitive. I will maybe add a symbol group syntax like `[aA]` to 
+
 # Dokedef File Format
 
 This project provides a **domain-specific grammar format** for defining game mechanics, actions, and effects. Unlike general-purpose language grammars, this format is **tailored for game-making**, focusing on structured actions, placeholders, and output values.
