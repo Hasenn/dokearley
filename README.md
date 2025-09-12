@@ -140,7 +140,7 @@ NonTerminal : "literal text with optional {things : Type}" -> OutputSpec
         
     - A composite Resource with fixed fields: `PartiallyBuiltType{foo : "bar", bar : 2501}`
         
-    - Propagation of fields from placeholders: `{}` giving all the fields to the placeholder's rule.
+    - Propagation of fields from placeholders: `{}` giving all the fields to the placeholder's rule. (UNSTABLE, will become dicts instead !)
         
 
 ---
