@@ -34,11 +34,6 @@ to an enemy : deal 7 damage
 to all allies : increase "strength" by 5
 remove "poison"
 ```
-*Strings are written as litterals, this is not exactly superb, i will add config to allow using some other syntax that looks pretty in markdown, like **poison**. 
-
-The String type could also be split into multiple "aliases" and you could specify `{stat : BoldString}` `{stat : WikiLink}` allowing **poison** or [[poison]] (which is good with editors like Obsidian, as it shows you what undocumented status effect you might have used and allows you to link to their definition in the wiki right then and there)
-In this case, i would allow `String` to take any of these. This needs more specification though.
-
 
 Will give you resources like these
 
@@ -60,7 +55,10 @@ TargetedEffect {
 
 RemoveStatus { status: "poison" }
 ```
+*Strings are written as litterals, this is not exactly superb, i will add config to allow using some other syntax that looks pretty in markdown, like **poison**. *
 
+The String type could also be split into multiple "aliases" and you could specify `{stat : BoldString}` `{stat : WikiLink}` allowing **poison** or [[poison]] (which is good with editors like Obsidian, as it shows you what undocumented status effect you might have used and allows you to link to their definition in the wiki right then and there)
+In this case, i would allow `String` to take any of these. This needs more specification though.
 
 # Notes
 
