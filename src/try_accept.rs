@@ -1,40 +1,34 @@
-use crate::recognizer::{
-    Chart, Grammar, Symbol, Token, tokenize,
-};
+use thiserror::Error;
 
-/// A hint about where the parser was stuck.
-#[derive(Debug, Clone)]
-pub struct RuleHint<'gr> {
-    pub lhs: &'gr str,
-    pub remaining_rhs: Vec<Symbol<'gr>>,
-    pub start_pos: usize,
+use crate::recognizer::{Chart, Item};
+use crate::recognizer::{Grammar, Production, Symbol};
+use std::collections::{HashMap, HashSet};
+
+/// A parse error with both user-friendly and developer-friendly details
+#[derive(Debug, Error)]
+pub struct ParseError {
+    pub pos: usize,
+    pub found: Option<String>,
+    pub expected: Vec<String>, // user-facing terminals
+    pub items: Vec<String>,    // developer-facing Earley items
 }
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        writeln!(
+            f,
+            "Parse error at pos {}: around {:?}",
+            self.pos,
+            self.found.clone().unwrap_or("<EOF>".to_string())
+        )?;
 
-/// Rich error type returned by `try_accept`.
-#[derive(Debug, Clone)]
-pub struct ParseError<'gr, 'inp> {
-    pub pos: usize,                  // index in token stream
-    pub found: Option<&'inp str>,    // offending token, if any
-    pub hints: Vec<RuleHint<'gr>>,   // expected continuations
-}
+        if !self.expected.is_empty() {
+            writeln!(f, "Expected one of: {}", self.expected.join(", "))?;
+        }
 
-impl<'gr, 'inp> std::fmt::Display for ParseError<'gr, 'inp> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "Parse error at pos {}: found {:?}", self.pos, self.found)?;
-
-        if !self.hints.is_empty() {
-            writeln!(f, "\nYou could have meant:")?;
-            for h in &self.hints {
-                if let Some(sym) = h.remaining_rhs.first() {
-                    writeln!(f, "  {} ?", sym)?;
-                }
-            }
-
-            writeln!(f, "\nPossible continuations:")?;
-            for h in &self.hints {
-                let rhs_str: Vec<String> =
-                    h.remaining_rhs.iter().map(|s| format!("{}", s)).collect();
-                writeln!(f, "  {} -> {}", h.lhs, rhs_str.join(" "))?;
+        if !self.items.is_empty() {
+            writeln!(f, "Related rules (dot at fail point):")?;
+            for it in &self.items {
+                writeln!(f, "  {}", it)?;
             }
         }
 
@@ -42,55 +36,146 @@ impl<'gr, 'inp> std::fmt::Display for ParseError<'gr, 'inp> {
     }
 }
 
-impl<'gr, 'inp> std::error::Error for ParseError<'gr, 'inp> {}
+/// Formatting helper: show an item with a dot
+fn format_item(lhs: &str, rhs: &[Symbol], dot: usize) -> String {
+    let mut parts = Vec::new();
+    for (i, sym) in rhs.iter().enumerate() {
+        if i == dot {
+            parts.push("•".to_string());
+        }
+        parts.push(format!("{}", sym));
+    }
+    if dot == rhs.len() {
+        parts.push("•".to_string());
+    }
+    format!("{} -> {}", lhs, parts.join(""))
+}
 
+impl<'gr> Grammar<'gr> {
+    /// Compute FIRST sets for all nonterminals and placeholders.
+    pub fn compute_first_sets(&self) -> HashMap<&'gr str, HashSet<Symbol<'gr>>> {
+        let mut first: HashMap<&'gr str, HashSet<Symbol<'gr>>> = HashMap::new();
+
+        // Initialize nonterminals and placeholders with empty sets
+        for prod in &self.productions {
+            first.entry(prod.lhs).or_default();
+
+            for sym in &prod.rhs {
+                if let Symbol::Placeholder { typ, .. } = sym {
+                    first.entry(typ).or_default();
+                } else if let Symbol::NonTerminal(nt) = sym {
+                    first.entry(nt).or_default();
+                }
+            }
+        }
+
+        let mut changed = true;
+        while changed {
+            changed = false;
+
+            // Temporary map to accumulate updates
+            let mut updates: HashMap<&'gr str, HashSet<Symbol<'gr>>> = HashMap::new();
+
+            for prod in &self.productions {
+                let lhs = prod.lhs;
+                let mut new_syms = HashSet::new();
+
+                if let Some(sym) = prod.rhs.first() {
+                    match sym {
+                        Symbol::Terminal(_) => {
+                            new_syms.insert(sym.clone());
+                        }
+                        Symbol::NonTerminal(nt) => {
+                            if let Some(rhs_first) = first.get(nt) {
+                                new_syms.extend(rhs_first.iter().cloned());
+                            }
+                        }
+                        Symbol::Placeholder { typ, .. } => {
+                            if let Some(rhs_first) = first.get(typ) {
+                                new_syms.extend(rhs_first.iter().cloned());
+                            }
+                        }
+                    }
+                }
+
+                updates.entry(lhs).or_default().extend(new_syms);
+            }
+
+            // Merge updates into the main FIRST map
+            for (lhs, syms) in updates {
+                let lhs_set = first.get_mut(lhs).unwrap();
+                let old_len = lhs_set.len();
+                lhs_set.extend(syms);
+                if lhs_set.len() > old_len {
+                    changed = true;
+                }
+            }
+        }
+
+        first
+    }
+}
+
+/// Expand a symbol into expected tokens (terminal names)
+/// Expand a symbol into expected tokens (terminal names)
+fn expected_tokens<'a>(
+    sym: &Symbol<'a>,
+    first_sets: &HashMap<&'a str, HashSet<Symbol<'a>>>,
+) -> Vec<String> {
+    match sym {
+        Symbol::Terminal(s) => vec![s.to_string()],
+        Symbol::NonTerminal(nt) => first_sets
+            .get(nt)
+            .map(|set| set.iter().map(|s| format!("{}", s)).collect())
+            .unwrap_or_default(),
+        Symbol::Placeholder { .. } => vec![], // placeholders don't expand to terminals
+    }
+}
 impl<'gr, 'inp> Chart<'gr, 'inp> {
-    /// Attempt to parse with detailed error reporting.
-    pub fn try_accept(&self, start: &str) -> Result<(), ParseError<'gr, 'inp>> {
-        let n = self.tokens.len();
-
-        // Check for full acceptance
-        let accepted = self.sets[n].values().any(|it| {
-            it.key.start == 0
-                && it.key.dot == self.grammar.productions[it.key.prod_id].rhs.len()
-                && self.grammar.productions[it.key.prod_id].lhs == start
-        });
-        if accepted {
+    pub fn try_accept(&self, start: &str) -> Result<(), ParseError> {
+        if self.accepted(start) {
             return Ok(());
         }
 
-        // --- Not accepted: compute furthest progress ---
+        let first_sets = self.grammar.compute_first_sets();
+
+        // 1️⃣ Find furthest index with some in-progress items (dot < rhs.len())
         let mut furthest_pos = 0;
+        let mut expected = Vec::new();
+        let mut items = Vec::new();
+
         for (i, set) in self.sets.iter().enumerate() {
-            if !set.is_empty() {
-                furthest_pos = i;
+            for item in set.values() {
+                let prod = &self.grammar.productions[item.key.prod_id];
+                if item.key.dot < prod.rhs.len() {
+                    furthest_pos = i;
+                }
             }
         }
 
-        let found = if furthest_pos < self.tokens.len() {
-            Some(self.tokens[furthest_pos].text)
-        } else {
-            None
-        };
+        // 2️⃣ Offending token is the one *at* furthest_pos
+        let found = self.tokens.get(furthest_pos).map(|t| t.text.to_string());
 
-        // Collect continuation hints
-        let mut hints = Vec::new();
-        for item in self.sets[furthest_pos].values() {
-            let prod = &self.grammar.productions[item.key.prod_id];
-            if item.key.dot < prod.rhs.len() {
-                let remaining_rhs = prod.rhs[item.key.dot..].to_vec();
-                hints.push(RuleHint {
-                    lhs: prod.lhs,
-                    remaining_rhs,
-                    start_pos: item.key.start,
-                });
+        // 3️⃣ Collect expectations/items from that point
+        if let Some(set) = self.sets.get(furthest_pos) {
+            for item in set.values() {
+                let prod = &self.grammar.productions[item.key.prod_id];
+                if item.key.dot < prod.rhs.len() {
+                    let next_sym = &prod.rhs[item.key.dot];
+                    expected.extend(expected_tokens(next_sym, &first_sets));
+                    items.push(format_item(prod.lhs, &prod.rhs, item.key.dot));
+                }
             }
         }
+
+        expected.sort();
+        expected.dedup();
 
         Err(ParseError {
             pos: furthest_pos,
             found,
-            hints,
+            expected,
+            items,
         })
     }
 }
@@ -99,127 +184,143 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
 #[cfg(test)]
 mod try_accept_file_tests {
     use super::*;
+    use crate::grammar_parser::{OutSpec, ValueSpec};
+    use crate::recognizer::{Production, tokenize};
     use std::fs;
     use std::path::Path;
-    use crate::grammar_parser::{OutSpec, ValueSpec};
-    use crate::recognizer::Production;
 
     fn dummy_outspec<'gr>() -> OutSpec<'gr> {
         OutSpec::Value(ValueSpec::FloatLiteral(0.))
     }
 
-    fn make_expr_grammar<'gr>() -> Grammar<'gr> {
+    // --- helpers ---
+
+    fn chars(s: &str) -> Vec<Symbol<'_>> {
+        s.chars()
+            .map(|c| Symbol::Terminal(Box::leak(c.to_string().into_boxed_str())))
+            .collect()
+    }
+
+    /// Write input and ParseError Display directly
+    fn write_parse_error<'inp>(test_name: &str, input: &str, err: &ParseError) {
+        let dir = Path::new("./target/test_user_errors");
+        fs::create_dir_all(dir).unwrap();
+        let path = dir.join(format!("{}.txt", test_name));
+
+        let mut content = String::new();
+        content.push_str("Input:\n");
+        content.push_str(input);
+        content.push_str("\n\nParseError:\n");
+        content.push_str(&format!("{}", err));
+
+        fs::write(path, content).unwrap();
+    }
+
+    // --- game-like grammar ---
+
+    fn make_game_grammar<'gr>() -> Grammar<'gr> {
         Grammar {
             productions: vec![
+                // Level ::= "level" String "{" Items "}"
                 Production {
-                    lhs: "Expr",
-                    rhs: vec![
-                        Symbol::NonTerminal("Term"),
-                        Symbol::Terminal("+"),
-                        Symbol::NonTerminal("Expr"),
-                    ],
+                    lhs: "Level",
+                    rhs: {
+                        let mut rhs = vec![];
+                        rhs.extend(chars("level "));
+                        rhs.push(Symbol::Placeholder {
+                            name: "name",
+                            typ: "String",
+                        });
+                        rhs.extend(chars(" "));
+                        rhs.push(Symbol::Terminal("{"));
+                        rhs.push(Symbol::NonTerminal("Items"));
+                        rhs.push(Symbol::Terminal("}"));
+                        rhs
+                    },
+                    out: dummy_outspec(),
+                },
+                // Items ::= Item Items | ε
+                Production {
+                    lhs: "Items",
+                    rhs: vec![Symbol::NonTerminal("Item"), Symbol::NonTerminal("Items")],
                     out: dummy_outspec(),
                 },
                 Production {
-                    lhs: "Expr",
-                    rhs: vec![Symbol::NonTerminal("Term")],
+                    lhs: "Items",
+                    rhs: vec![],
+                    out: dummy_outspec(),
+                },
+                // Item ::= "enemy" String | "treasure" String
+                Production {
+                    lhs: "Item",
+                    rhs: {
+                        let mut rhs = chars("enemy");
+                        rhs.push(Symbol::Placeholder {
+                            name: "id",
+                            typ: "String",
+                        });
+                        rhs
+                    },
                     out: dummy_outspec(),
                 },
                 Production {
-                    lhs: "Term",
-                    rhs: vec![Symbol::Placeholder { name: "n", typ: "Int" }],
-                    out: dummy_outspec(),
-                },
-                Production {
-                    lhs: "Term",
-                    rhs: vec![Symbol::Placeholder { name: "x", typ: "Float" }],
-                    out: dummy_outspec(),
-                },
-                Production {
-                    lhs: "Term",
-                    rhs: vec![Symbol::Placeholder { name: "s", typ: "String" }],
+                    lhs: "Item",
+                    rhs: {
+                        let mut rhs = chars("treasure");
+                        rhs.push(Symbol::Placeholder {
+                            name: "id",
+                            typ: "String",
+                        });
+                        rhs
+                    },
                     out: dummy_outspec(),
                 },
             ],
         }
     }
 
-    fn write_parse_error<'gr, 'inp>(test_name: &str, err: &ParseError<'gr, 'inp>) {
-        let dir = Path::new("./target/test_user_errors");
-        fs::create_dir_all(dir).unwrap();
-        let path = dir.join(format!("{}.txt", test_name));
-        let mut content = format!("Parse error at position {}\n", err.pos);
-        if let Some(found) = err.found {
-            content.push_str(&format!("Found token: '{}'\n", found));
-        } else {
-            content.push_str("Found token: <EOF>\n");
-        }
-        content.push_str("Expected hints:\n");
-        for hint in &err.hints {
-            let rhs: Vec<String> = hint.remaining_rhs.iter().map(|s| s.to_string()).collect();
-            content.push_str(&format!("  {} -> {}\n", hint.lhs, rhs.join(" ")));
-        }
-        fs::write(path, content).unwrap();
-    }
+    // --- game-like tests with input written to files ---
 
     #[test]
-    fn try_accept_incomplete_addition() {
-        let grammar = make_expr_grammar();
-        let input = "42+";
+    fn try_accept_incomplete_level() {
+        let grammar = make_game_grammar();
+        let input = r#"level "Dungeon" { enemy "orc" treasure"#; // missing string
         let tokens = tokenize(input);
-        let mut chart = Chart::new(&grammar, tokens, "Expr");
-        chart.recognize("Expr");
+        let mut chart = Chart::new(&grammar, tokens, "Level");
+        chart.recognize("Level");
 
-        assert!(!chart.accepted("Expr"));
+        assert!(!chart.accepted("Level"));
 
-        if let Err(err) = chart.try_accept("Expr") {
-            write_parse_error("try_accept_incomplete_addition", &err);
+        if let Err(err) = chart.try_accept("Level") {
+            write_parse_error("try_accept_incomplete_level", input, &err);
         }
     }
 
     #[test]
-    fn try_accept_after_int() {
-        let grammar = make_expr_grammar();
-        let input = "42";
+    fn try_accept_missing_brace() {
+        let grammar = make_game_grammar();
+        let input = r#"level "Dungeon"{ enemy "orc" treasure "gold""#; // missing }
         let tokens = tokenize(input);
-        let mut chart = Chart::new(&grammar, tokens, "Expr");
-        chart.recognize("Expr");
+        let mut chart = Chart::new(&grammar, tokens, "Level");
+        chart.recognize("Level");
 
-        assert!(chart.accepted("Expr"));
+        assert!(!chart.accepted("Level"));
 
-        if let Err(err) = chart.try_accept("Expr") {
-            write_parse_error("try_accept_after_int", &err);
+        if let Err(err) = chart.try_accept("Level") {
+            write_parse_error("try_accept_missing_brace", input, &err);
         }
     }
 
     #[test]
-    fn try_accept_string_literal() {
-        let grammar = make_expr_grammar();
-        let input = r#""abc""#;
+    fn try_accept_wrong_level() {
+        let grammar = make_game_grammar();
+        let input = r#"level "Dungeon" { enemy "orc" tre asure "gold" }"#; // typo in 'treasure'
         let tokens = tokenize(input);
-        let mut chart = Chart::new(&grammar, tokens, "Expr");
-        chart.recognize("Expr");
-
-        assert!(chart.accepted("Expr"));
-
-        if let Err(err) = chart.try_accept("Expr") {
-            write_parse_error("try_accept_string_literal", &err);
-        }
-    }
-
-    #[test]
-    fn try_accept_nested_addition() {
-        let grammar = make_expr_grammar();
-        let input = "3+";
-        let tokens = tokenize(input);
-        let mut chart = Chart::new(&grammar, tokens, "Expr");
-        chart.recognize("Expr");
-
-        assert!(!chart.accepted("Expr"));
-
-        if let Err(err) = chart.try_accept("Expr") {
-            write_parse_error("try_accept_nested_addition", &err);
+        let mut chart = Chart::new(&grammar, tokens, "Level");
+        chart.recognize("Level");
+        chart.print_chart();
+        if let Err(err) = chart.try_accept("Level") {
+            write_parse_error("try_accept_wrong_level", input, &err);
         }
     }
 }
-

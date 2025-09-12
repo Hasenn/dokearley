@@ -1,6 +1,9 @@
+use chumsky::Parser;
+
 pub use crate::grammar_parser::OutSpec;
 pub use crate::grammar_parser::RuleRhs;
 pub use crate::grammar_parser::ValueSpec;
+use crate::grammar_parser::rules;
 use crate::parser::Value;
 use std::collections::{HashMap, HashSet};
 
@@ -27,6 +30,15 @@ pub enum Symbol<'gr> {
     Terminal(&'gr str),
     Placeholder { name: &'gr str, typ: &'gr str },
     NonTerminal(&'gr str),
+}
+
+impl<'gr> Symbol<'gr> {
+    pub fn is_terminal(&self) -> bool {
+        match self {
+            Symbol::Terminal(_) => true,
+            _ => false,
+        }
+    }
 }
 
 use std::fmt;
@@ -246,12 +258,8 @@ impl<'inp> Token<'inp> {
     /// Returns `None` for purely structural tokens like `Char`.
     pub fn get_value<'gr>(&self) -> Option<Value<'gr, 'inp>> {
         match self.kind {
-            TokenKind::Int => {
-                Some(Value::Integer(self.text.parse::<i64>().ok()?))
-            }
-            TokenKind::Float => {
-                Some(Value::Float(self.text.parse::<f64>().ok()?))
-            }
+            TokenKind::Int => Some(Value::Integer(self.text.parse::<i64>().ok()?)),
+            TokenKind::Float => Some(Value::Float(self.text.parse::<f64>().ok()?)),
             TokenKind::StringLit => Some(Value::String(self.text)),
             TokenKind::Char => None, // structural only
         }
@@ -537,7 +545,6 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
     }
 }
 
-
 pub struct RuleHint<'gr> {
     pub lhs: &'gr str,
     pub remaining_rhs: Vec<Symbol<'gr>>,
@@ -549,7 +556,6 @@ pub struct ParseError<'gr, 'inp> {
     pub found: Option<&'inp str>,
     pub hints: Vec<RuleHint<'gr>>,
 }
-
 
 impl<'gr, 'inp> Chart<'gr, 'inp> {
     pub fn print_chart(&self) {

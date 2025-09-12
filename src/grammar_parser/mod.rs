@@ -80,7 +80,7 @@ pub enum OutSpec<'gr> {
     // Values that should be propagated as fields in their parent.
     Propagate,
     // Transparent rules that yield their single nonterminal's value (Disjunction)
-    Transparent
+    Transparent,
 }
 
 pub enum OutPut {

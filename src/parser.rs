@@ -346,105 +346,103 @@ pub enum Value<'gr, 'inp> {
     },
 }
 
+
+
 impl<'gr, 'inp> ParseTree<'gr, 'inp>
 where
     'gr: 'inp,
 {
     pub fn compute_value(&self) -> Value<'gr, 'inp> {
         match self {
-            ParseTree::Token(tok) => tok
-                .get_value()
-                .unwrap_or(Value::String(tok.text)), // fallback for structural chars
+            ParseTree::Token(tok) => tok.get_value().unwrap_or(Value::String(tok.text)), // fallback for structural chars
             ParseTree::Node { rule, children } => match &rule.out {
                 OutSpec::Value(spec) => match spec {
-                                ValueSpec::IntegerLiteral(i) => Value::Integer(*i),
-                                ValueSpec::FloatLiteral(f) => Value::Float(*f),
-                                ValueSpec::StringLiteral(s) => Value::String(s),
-                                ValueSpec::Identifier(name) => {
-                                    // find first child matching placeholder name
-                                    children
-                                        .iter()
-                                        .find_map(|c| match c {
-                                            ParseTree::Node { rule: child_rule, .. } => {
-                                                child_rule
-                                                    .rhs
-                                                    .iter()
-                                                    .zip(c.as_children())
-                                                    .find_map(|(sym, child)| match sym {
-                                                        Symbol::Placeholder { name: n, .. } if *n == **name => {
-                                                            Some(child.compute_value())
-                                                        }
-                                                        _ => None,
-                                                    })
-                                            }
-                                            ParseTree::Token(tok) => None
-                                        })
-                                        .unwrap_or(Value::String("<missing>"))
-                                }
-                            },
+                    ValueSpec::IntegerLiteral(i) => Value::Integer(*i),
+                    ValueSpec::FloatLiteral(f) => Value::Float(*f),
+                    ValueSpec::StringLiteral(s) => Value::String(s),
+                    ValueSpec::Identifier(name) => {
+                        // find first child matching placeholder name
+                        children
+                            .iter()
+                            .find_map(|c| match c {
+                                ParseTree::Node {
+                                    rule: child_rule, ..
+                                } => child_rule.rhs.iter().zip(c.as_children()).find_map(
+                                    |(sym, child)| match sym {
+                                        Symbol::Placeholder { name: n, .. } if *n == **name => {
+                                            Some(child.compute_value())
+                                        }
+                                        _ => None,
+                                    },
+                                ),
+                                ParseTree::Token(tok) => None,
+                            })
+                            .unwrap_or(Value::String("<missing>"))
+                    }
+                },
                 OutSpec::Resource { typ, fields } => {
-                                let mut result_fields = HashMap::new();
+                    let mut result_fields = HashMap::new();
 
-                                // Collect children placeholders
-                                for (i, sym) in rule.rhs.iter().enumerate() {
-                                    match sym {
-                                        Symbol::Placeholder { name, .. } => {
-                                            let val = children[i].compute_value();
-                                            result_fields.insert(*name, val);
+                    // Collect children placeholders
+                    for (i, sym) in rule.rhs.iter().enumerate() {
+                        match sym {
+                            Symbol::Placeholder { name, .. } => {
+                                let val = children[i].compute_value();
+                                result_fields.insert(*name, val);
+                            }
+                            Symbol::NonTerminal(nt_name) => {
+                                let child_val = children[i].compute_value();
+                                // if child is a __Propagate__ resource, merge fields
+                                match &child_val {
+                                    Value::Resource { typ: t, fields: f }
+                                        if *t == "__Propagate__" =>
+                                    {
+                                        for (k, v) in f {
+                                            result_fields.insert(k, v.clone());
                                         }
-                                        Symbol::NonTerminal(nt_name) => {
-                                            let child_val = children[i].compute_value();
-                                            // if child is a __Propagate__ resource, merge fields
-                                            match &child_val {
-                                                Value::Resource { typ: t, fields: f } if *t == "__Propagate__" => {
-                                                    for (k, v) in f {
-                                                        result_fields.insert(k, v.clone());
-                                                    }
-                                                }
-                                                _ => {
-                                                    // otherwise, keep under nonterminal name
-                                                    result_fields.insert(*nt_name, child_val);
-                                                }
-                                            }
-                                        }
-                                        _ => {}
+                                    }
+                                    _ => {
+                                        // otherwise, keep under nonterminal name
+                                        result_fields.insert(*nt_name, child_val);
                                     }
                                 }
-
-                                // fixed aliases
-                                for (k, v) in fields {
-                                    let val = match v {
-                                        ValueSpec::Identifier(n) => {
-                                            children
-                                                .iter()
-                                                .find_map(|c| c.find_placeholder(n))
-                                                .unwrap_or(Value::String("<missing>"))
-                                        }
-                                        ValueSpec::IntegerLiteral(i) => Value::Integer(*i),
-                                        ValueSpec::FloatLiteral(f) => Value::Float(*f),
-                                        ValueSpec::StringLiteral(s) => Value::String(s),
-                                    };
-                                    result_fields.insert(*k, val);
-                                }
-
-                                Value::Resource {
-                                    typ,
-                                    fields: result_fields,
-                                }
                             }
+                            _ => {}
+                        }
+                    }
+
+                    // fixed aliases
+                    for (k, v) in fields {
+                        let val = match v {
+                            ValueSpec::Identifier(n) => children
+                                .iter()
+                                .find_map(|c| c.find_placeholder(n))
+                                .unwrap_or(Value::String("<missing>")),
+                            ValueSpec::IntegerLiteral(i) => Value::Integer(*i),
+                            ValueSpec::FloatLiteral(f) => Value::Float(*f),
+                            ValueSpec::StringLiteral(s) => Value::String(s),
+                        };
+                        result_fields.insert(*k, val);
+                    }
+
+                    Value::Resource {
+                        typ,
+                        fields: result_fields,
+                    }
+                }
                 OutSpec::Propagate => {
-                                // Create a __Propagate__ resource with fields collected from placeholders
-                                let mut map = HashMap::new();
-                                for (sym, child) in rule.rhs.iter().zip(children) {
-                                    if let Symbol::Placeholder { name, .. } = sym {
-                                        map.insert(*name, child.compute_value());
-                                    }
-                                }
-                                Value::Resource {
-                                    typ: "__Propagate__",
-                                    fields: map,
-                                }
-                            }
+                    // Create a __Propagate__ resource with fields collected from placeholders
+                    let mut map = HashMap::new();
+                    for (sym, child) in rule.rhs.iter().zip(children) {
+                        if let Symbol::Placeholder { name, .. } = sym {
+                            map.insert(*name, child.compute_value());
+                        }
+                    }
+                    Value::Resource {
+                        typ: "__Propagate__",
+                        fields: map,
+                    }
+                }
                 OutSpec::Transparent => children[0].compute_value(),
             },
         }
@@ -452,7 +450,7 @@ where
 
     fn as_children(&self) -> Vec<ParseTree<'gr, 'inp>> {
         match self {
-            ParseTree::Node { rule : _ ,children } => children.clone(),
+            ParseTree::Node { rule: _, children } => children.clone(),
             _ => vec![],
         }
     }
@@ -473,8 +471,6 @@ where
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod parse_tree_value_tests {
@@ -628,5 +624,4 @@ mod parse_tree_value_tests {
             _ => panic!("expected Resource"),
         }
     }
-
 }
