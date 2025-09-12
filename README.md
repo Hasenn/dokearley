@@ -65,8 +65,8 @@ In this case, i would allow `String` to take any of these. This needs more speci
 It should be said that for ambiguous grammars, this parser is O(n^3). 
 Though in practice, this is meant for small statements of bounded size and therefore would still be linear.
 
-Earley is also quite efficient for this use case, because it moves forward without creating many items with long sequences of terminals.
-As this is meant for human-readable languages, there are a lot of terminals that structure the data, often way more than placeholders/non-terminals.
+Earley is also quite efficient for this use case.
+Because this is meant for human-readable languages, there are a lot of terminals that structure the data, often way more than placeholders/non-terminals, and Earley parsers happily chug along the terminals without creating an explosion of items.
 
 Supports nullable rules (at the moment they are tested but don't have a definite syntax in the dokedef language)
 
