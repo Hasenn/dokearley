@@ -57,7 +57,10 @@ pub enum DokearleyError {
     DokearleyBuildParseTreeError,
 }
 
+
+/// A parser that recognizes and parses a custom grammar, defined in a `dokedef` file.
 impl<'gr> Dokearley<'gr> {
+    /// Builds a parser from a `dokedef` grammar string
     pub fn from_dokedef(grammar_string: &'gr str) -> Result<Self, DokearleyError> {
         Ok(Self {
             grammar: {
@@ -85,6 +88,8 @@ impl<'gr> Dokearley<'gr> {
 }
 
 impl<'gr> Dokearley<'gr> {
+    /// Parses an input into a `Value`with the parser's grammar, starting from a non-terminal `start`.
+    /// The `start` specifies what we are trying to parse.
     pub fn parse<'inp>(
         &'gr self,
         input: &'inp str,

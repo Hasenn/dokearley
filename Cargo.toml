@@ -1,7 +1,15 @@
 [package]
 name = "dokearley"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+authors = ["Eliott Veyrier"]
+description = "Earley parser + DSL grammar language for game devs"
+license = "MIT OR Apache-2.0"     # SPDX identifier(s), required
+readme = "README.md"              # will be shown on crates.io
+repository = "https://github.com/Hasenn/dokearley"
+documentation = "https://docs.rs/dokearley"
+categories = ["game-development", "parser-implementations"]
+keywords = ["parser", "earley", "dsl", "game-dev", "grammar"]
 
 [dependencies]
 chumsky = "0.10.1"
