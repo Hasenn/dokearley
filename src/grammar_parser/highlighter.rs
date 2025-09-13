@@ -117,6 +117,9 @@ pub fn highlight_tokens<'a>(_input: &'a str, rules: &[Rule<'a>]) -> Vec<Highligh
                             ValueSpec::FloatLiteral(_) => {
                                 // spans not yet carried — TODO
                             }
+                            ValueSpec::BoolLiteral(_) => {
+                                // no spans for bool yet
+                            }
                         }
                     }
                 }
@@ -124,6 +127,40 @@ pub fn highlight_tokens<'a>(_input: &'a str, rules: &[Rule<'a>]) -> Vec<Highligh
                     // Transparent has no explicit RHS text to highlight.
                     // We already highlighted the pattern (which for transparent rules
                     // is a single nonterminal), so nothing more to do here.
+                }
+                RuleRhs::Dictionary(fields) => {
+                    for (field_name, field_val) in fields {
+                        tokens.push(span_token(field_name, HighlightKind::FieldName));
+                        match field_val {
+                            ValueSpec::Identifier(s) => {
+                                tokens.push(span_token(s, HighlightKind::Identifier));
+                            }
+                            ValueSpec::StringLiteral(s) => {
+                                // Emit quotes + content
+                                let span = s.span.clone();
+                                tokens.push(HighlightToken {
+                                    text: "\"",
+                                    span: (span.start - 1)..span.start,
+                                    kind: HighlightKind::StringLiteral,
+                                });
+                                tokens.push(span_token(s, HighlightKind::StringLiteral));
+                                tokens.push(HighlightToken {
+                                    text: "\"",
+                                    span: span.end..(span.end + 1),
+                                    kind: HighlightKind::StringLiteral,
+                                });
+                            }
+                            ValueSpec::IntegerLiteral(_) => {
+                                // spans not yet carried — TODO
+                            }
+                            ValueSpec::FloatLiteral(_) => {
+                                // spans not yet carried — TODO
+                            }
+                            ValueSpec::BoolLiteral(_) => {
+                                // no spans for bool yet
+                            }
+                        }
+                    }
                 }
             }
         }

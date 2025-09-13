@@ -1,6 +1,4 @@
-use crate::recognizer::{
-    is_builtin, Chart, Grammar, OutSpec, Production, Symbol, Token, ValueSpec,
-};
+use crate::recognizer::{is_builtin, Chart, Grammar, Production, Symbol, Token, ValueSpec};
 use std::{collections::HashMap, usize};
 
 /// Represents a completed grammar rule (or terminal edge) in the chart.
@@ -9,6 +7,20 @@ use std::{collections::HashMap, usize};
 pub struct Edge {
     pub rule: usize,   // production id, usize::MAX = terminal edge
     pub finish: usize, // end position in the input
+}
+
+#[derive(Debug, Clone)]
+pub enum OutSpec<'gr> {
+    // A value corresponding to a basic type
+    Value(ValueSpec<'gr>),
+    // A resource with a type and optionally fixed fields
+    Resource {
+        typ: &'gr str,
+        fields: HashMap<&'gr str, ValueSpec<'gr>>,
+    },
+    Dict(HashMap<&'gr str, ValueSpec<'gr>>),
+    // Transparent rules that yield their single nonterminal's value (Disjunction)
+    Transparent,
 }
 
 /// A parse tree node:
@@ -339,11 +351,13 @@ mod parse_tree_pretty_tests {
 pub enum Value<'gr, 'inp> {
     Integer(i64),
     Float(f64),
+    Bool(bool),
     String(&'inp str),
     Resource {
         typ: &'gr str,
         fields: HashMap<&'gr str, Value<'gr, 'inp>>,
     },
+    Dictionary(HashMap<&'gr str, Value<'gr, 'inp>>),
 }
 
 impl<'gr, 'inp> ParseTree<'gr, 'inp>
@@ -356,13 +370,11 @@ where
             ParseTree::Token(tok) => tok.get_value().unwrap_or(Value::String(tok.text)),
             // For nodes, we check the OutSpec and do what it says
             ParseTree::Node { rule, children } => match &rule.out {
-                // The outspec is a value
                 OutSpec::Value(spec) => match spec {
-                    // Literals get passed literally
                     ValueSpec::IntegerLiteral(i) => Value::Integer(*i),
                     ValueSpec::FloatLiteral(f) => Value::Float(*f),
                     ValueSpec::StringLiteral(s) => Value::String(s),
-                    // Identifiers mean we look for a placeholder to bind the value of
+                    ValueSpec::BoolLiteral(b) => Value::Bool(*b),
                     ValueSpec::Identifier(name) => {
                         // find first child matching placeholder name
                         children
@@ -380,9 +392,10 @@ where
                                 ),
                                 ParseTree::Token(_tok) => None,
                             })
-                            .unwrap_or(Value::String("<missing>"))
+                            .unwrap_or(Value::String("<missing_placeholder>"))
                     }
                 },
+                // If the outspec says to build a resource, make it
                 OutSpec::Resource { typ, fields } => {
                     let mut result_fields = HashMap::new();
 
@@ -420,10 +433,11 @@ where
                             ValueSpec::Identifier(n) => children
                                 .iter()
                                 .find_map(|c| c.find_placeholder(n))
-                                .unwrap_or(Value::String("<missing>")),
+                                .unwrap_or(Value::String("<missing_i>")),
                             ValueSpec::IntegerLiteral(i) => Value::Integer(*i),
                             ValueSpec::FloatLiteral(f) => Value::Float(*f),
                             ValueSpec::StringLiteral(s) => Value::String(s),
+                            ValueSpec::BoolLiteral(b) => Value::Bool(*b),
                         };
                         result_fields.insert(*k, val);
                     }
@@ -433,20 +447,42 @@ where
                         fields: result_fields,
                     }
                 }
-                OutSpec::Propagate => {
-                    // Create a __Propagate__ resource with fields collected from placeholders
-                    let mut map = HashMap::new();
-                    for (sym, child) in rule.rhs.iter().zip(children) {
-                        if let Symbol::Placeholder { name, .. } = sym {
-                            map.insert(*name, child.compute_value());
+                OutSpec::Transparent => children[0].compute_value(),
+                // If the outspec says to build a dictionary, make it
+                OutSpec::Dict(fields) => {
+                    let mut result_fields = HashMap::new();
+
+                    // collect children placeholders and non-terminals
+                    for (i, sym) in rule.rhs.iter().enumerate() {
+                        match sym {
+                            Symbol::Placeholder { name, .. } => {
+                                let val = children[i].compute_value();
+                                result_fields.insert(*name, val);
+                            }
+                            Symbol::NonTerminal(nt_name) => {
+                                let child_val = children[i].compute_value();
+                                result_fields.insert(*nt_name, child_val);
+                            }
+                            _ => {}
                         }
                     }
-                    Value::Resource {
-                        typ: "__Propagate__",
-                        fields: map,
+
+                    // fixed fields (aliases) from OutSpec::Dict definition
+                    for (k, v) in fields {
+                        let val = match v {
+                            ValueSpec::Identifier(name) => {
+                                self.find_placeholder(name).unwrap_or(Value::String("<missing related placeholder>"))
+                            },
+                            ValueSpec::IntegerLiteral(i) => Value::Integer(*i),
+                            ValueSpec::FloatLiteral(f) => Value::Float(*f),
+                            ValueSpec::StringLiteral(s) => Value::String(s),
+                            ValueSpec::BoolLiteral(b) => Value::Bool(*b),
+                        };
+                        result_fields.insert(*k, val);
                     }
+
+                    Value::Dictionary(result_fields)
                 }
-                OutSpec::Transparent => children[0].compute_value(),
             },
         }
     }
@@ -474,11 +510,10 @@ where
         }
     }
 }
-
 #[cfg(test)]
 mod parse_tree_value_tests {
     use super::*;
-    use crate::recognizer::tokenize;
+    use crate::{recognizer::tokenize};
 
     #[test]
     fn compute_value_simple_effect() {
@@ -512,7 +547,7 @@ mod parse_tree_value_tests {
                     ],
                     out: OutSpec::Resource {
                         typ: "DamageEffect",
-                        fields: HashMap::new(), // implicit fields come from placeholders
+                        fields: HashMap::new(), // implicit fields come from placeholders + children
                     },
                 },
                 Production {
@@ -552,9 +587,10 @@ mod parse_tree_value_tests {
     }
 
     #[test]
-    fn compute_value_with_propagate() {
+    fn compute_value_with_dict() {
         // Effect : "Deal {damage:Int} damage at {Position}" -> DamageEffect
-        // Position : "(" {x:Int} "," {y:Int} ")" -> Propagate
+        // Position : "(" {x:Int} "," {y:Int} ")" -> { x: {x}, y: {y} }
+
         let grammar = Grammar {
             productions: vec![
                 Production {
@@ -602,7 +638,7 @@ mod parse_tree_value_tests {
                         },
                         Symbol::Terminal(")"),
                     ],
-                    out: OutSpec::Propagate,
+                    out: OutSpec::Dict(HashMap::new()),
                 },
             ],
         };
@@ -616,13 +652,19 @@ mod parse_tree_value_tests {
 
         let val = tree.compute_value();
         println!("Computed value: {:?}", val);
-        dbg!(&val);
+
         match val {
             Value::Resource { typ, fields } => {
                 assert_eq!(typ, "DamageEffect");
                 assert!(matches!(fields["damage"], Value::Integer(32)));
-                assert!(matches!(fields["x"], Value::Integer(2)));
-                assert!(matches!(fields["y"], Value::Integer(5)));
+                assert!(matches!(fields["Position"], Value::Dictionary(_)));
+
+                if let Value::Dictionary(dict) = &fields["Position"] {
+                    assert!(matches!(dict["x"], Value::Integer(2)));
+                    assert!(matches!(dict["y"], Value::Integer(5)));
+                } else {
+                    panic!("Position should be a Dictionary");
+                }
             }
             _ => panic!("expected Resource"),
         }

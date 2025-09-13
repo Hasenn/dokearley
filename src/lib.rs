@@ -25,25 +25,35 @@ pub enum Value {
     Integer(i64),
     Float(f64),
     String(String),
+    Bool(bool),
     Resource {
         typ: String,
         fields: HashMap<String, Value>,
     },
+    Array(Vec<Value>),
+    Dictionary(HashMap<String, Value>),
 }
 
 impl<'gr, 'inp> From<crate::parser::Value<'gr, 'inp>> for Value {
     fn from(v: crate::parser::Value<'gr, 'inp>) -> Self {
         match v {
-            crate::parser::Value::Integer(i) => Value::Integer(i),
-            crate::parser::Value::Float(f) => Value::Float(f),
-            crate::parser::Value::String(s) => Value::String(s.to_string()),
-            crate::parser::Value::Resource { typ, fields } => Value::Resource {
+            parser::Value::Integer(i) => Value::Integer(i),
+            parser::Value::Float(f) => Value::Float(f),
+            parser::Value::String(s) => Value::String(s.to_string()),
+            parser::Value::Resource { typ, fields } => Value::Resource {
                 typ: typ.to_string(),
                 fields: fields
                     .into_iter()
                     .map(|(k, v)| (k.to_string(), v.into()))
                     .collect(),
             },
+            parser::Value::Bool(b) => Value::Bool(b),
+            parser::Value::Dictionary(fields) => Value::Dictionary({
+                fields
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v.into()))
+                    .collect()
+            }),
         }
     }
 }
@@ -503,6 +513,69 @@ HealEffect   : "heal for {amount:Int}"    -> Heal
                     m
                 }
             }
+        );
+    }
+}
+
+#[cfg(test)]
+mod dictionary_outspecs_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn make_engine() -> Dokearley<'static> {
+        // Grammar where RHS directly produces dictionaries
+        let grammar = r#"
+Effect: "gain {amount:Int} gold" -> { kind: "gain_gold"}
+Effect: "lose {amount:Int} health" -> { kind: "lose_health"}
+Effect: "status {status:String}" -> { kind: "status", value: status}
+"#;
+
+        Dokearley::from_dokedef(grammar).expect("invalid dictionary grammar")
+    }
+
+    #[test]
+    fn parse_gain_gold() {
+        let engine = make_engine();
+        let result = engine.parse("gain 5 gold", "Effect").unwrap();
+        assert_eq!(
+            result,
+            Value::Dictionary({
+                let mut m = HashMap::new();
+                m.insert("kind".into(), Value::String("gain_gold".into()));
+                m.insert("amount".into(), Value::Integer(5));
+                m
+            })
+        );
+    }
+
+    #[test]
+    fn parse_lose_health() {
+        let engine = make_engine();
+        let result = engine.parse("lose 3 health", "Effect").unwrap();
+        assert_eq!(
+            result,
+            Value::Dictionary({
+                let mut m = HashMap::new();
+                m.insert("kind".into(), Value::String("lose_health".into()));
+                m.insert("amount".into(), Value::Integer(3));
+                m
+            })
+        );
+    }
+
+    #[test]
+    fn parse_status() {
+        let engine = make_engine();
+        let result = engine.parse("status \"burned\"", "Effect").unwrap();
+        assert_eq!(
+            result,
+            Value::Dictionary({
+                let mut m = HashMap::new();
+                m.insert("value".into(), Value::String("burned".into()));
+                m.insert("kind".into(), Value::String("status".into()));
+                m.insert("status".into(), Value::String("burned".into()));
+                m
+            })
         );
     }
 }

@@ -9,7 +9,9 @@ use chumsky::{
     prelude::*,
     text::{inline_whitespace, newline},
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, hash::Hash};
+
+use crate::parser::OutSpec;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Str<'gr> {
@@ -68,31 +70,6 @@ pub struct Production<'gr> {
     pub out: OutSpec<'gr>,
 }
 
-#[derive(Debug, Clone)]
-pub enum OutSpec<'gr> {
-    // A value corresponding to a basic type
-    Value(ValueSpec<'gr>),
-    // A resource with a type and optionally fixed fields
-    Resource {
-        typ: &'gr str,
-        fields: HashMap<&'gr str, ValueSpec<'gr>>,
-    },
-    // Values that should be propagated as fields in their parent.
-    Propagate,
-    // Transparent rules that yield their single nonterminal's value (Disjunction)
-    Transparent,
-}
-
-pub enum OutPut {
-    Int(i64),
-    Float(f64),
-    String(String),
-    Resource {
-        type_name: String,
-        fields: HashMap<String, OutPut>,
-    },
-}
-
 impl<'gr> From<Option<RuleRhs<'gr>>> for OutSpec<'gr> {
     fn from(value: Option<RuleRhs<'gr>>) -> Self {
         match value {
@@ -115,8 +92,15 @@ impl<'gr> From<Option<RuleRhs<'gr>>> for OutSpec<'gr> {
                     }
                 }
                 RuleRhs::Transparent => OutSpec::Transparent,
+                RuleRhs::Dictionary(items) => {
+                    let mut hash: HashMap<&'gr str, ValueSpec<'gr>> = HashMap::new();
+                    items.iter().for_each(|(k, v)| {
+                        hash.insert(&k, *v);
+                    });
+                    OutSpec::Dict(hash)
+                }
             },
-            None => Self::Propagate,
+            None => Self::Dict(HashMap::new()),
         }
     }
 }
@@ -132,6 +116,7 @@ pub enum ValueSpec<'gr> {
     StringLiteral(Str<'gr>),
     IntegerLiteral(i64),
     FloatLiteral(f64),
+    BoolLiteral(bool),
 }
 
 #[derive(Debug, Clone)]
@@ -141,6 +126,7 @@ pub enum RuleRhs<'gr> {
         name: Str<'gr>,
         fields: Vec<(Str<'gr>, ValueSpec<'gr>)>,
     },
+    Dictionary(Vec<(Str<'gr>, ValueSpec<'gr>)>),
     Transparent,
 }
 
@@ -286,14 +272,7 @@ fn string_literal<'gr>() -> impl Parser<'gr, &'gr str, ValueSpec<'gr>, extra::Er
 
 fn number_literal<'gr>() -> impl Parser<'gr, &'gr str, ValueSpec<'gr>, extra::Err<Rich<'gr, char>>>
 {
-    numbers::number_literal()
-        .map_with(|fv, _extra| match fv {
-            ValueSpec::IntegerLiteral(i) => ValueSpec::IntegerLiteral(i),
-            ValueSpec::FloatLiteral(f) => ValueSpec::FloatLiteral(f),
-            ValueSpec::Identifier(s) => ValueSpec::Identifier(s),
-            ValueSpec::StringLiteral(s) => ValueSpec::StringLiteral(s),
-        })
-        .labelled("number literal")
+    numbers::number_literal().labelled("number literal")
 }
 
 fn field_value<'gr>() -> impl Parser<'gr, &'gr str, ValueSpec<'gr>, extra::Err<Rich<'gr, char>>> {
@@ -316,7 +295,7 @@ fn fields_parser<'gr>(
         .labelled("fields")
 }
 
-fn out_spec_parser<'gr>() -> impl Parser<'gr, &'gr str, RuleRhs<'gr>, extra::Err<Rich<'gr, char>>> {
+fn res_out_spec<'gr>() -> impl Parser<'gr, &'gr str, RuleRhs<'gr>, extra::Err<Rich<'gr, char>>> {
     ident()
         .padded_by(inline_whitespace())
         .then(
@@ -332,4 +311,20 @@ fn out_spec_parser<'gr>() -> impl Parser<'gr, &'gr str, RuleRhs<'gr>, extra::Err
             None => RuleRhs::Type(name),
         })
         .labelled("output specification")
+}
+
+fn dict_out_spec<'gr>() -> impl Parser<'gr, &'gr str, RuleRhs<'gr>, extra::Err<Rich<'gr, char>>> {
+    just('{')
+        .padded()
+        .ignore_then(fields_parser())
+        .padded()
+        .then_ignore(just('}'))
+        .map_with(|opt_fields, _span| match opt_fields {
+            fields => RuleRhs::Dictionary(fields),
+        })
+        .labelled("output specification")
+}
+
+fn out_spec_parser<'gr>() -> impl Parser<'gr, &'gr str, RuleRhs<'gr>, extra::Err<Rich<'gr, char>>> {
+    choice((dict_out_spec(), res_out_spec()))
 }
