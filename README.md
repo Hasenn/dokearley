@@ -76,7 +76,7 @@ As of now, in the user language, 102020 is always an int, and 65.5 a float, and 
 
 You will find that there are no bools. I will also add them, though probably only in output specs, as i'm sure anyone's ideal human readable DSL doesn't look like `Do something : true`, and more like `Do something`
 
-Currently case-sensitive. I will maybe add a symbol group syntax like `[aA]` to 
+Currently case-sensitive. I will maybe add a symbol group syntax like `[aA]` to allow for quick handling of that, or add an optional lowercase matching.
 
 # Dokedef File Format
 
