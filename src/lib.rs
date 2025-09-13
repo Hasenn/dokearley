@@ -6,11 +6,11 @@ use crate::{
 };
 use chumsky::{Parser, error};
 use thiserror::Error;
-pub mod conversion;
 pub mod grammar_parser;
-pub mod mock_values;
+mod conversion;
+mod mock_values;
 mod parser;
-pub mod recognizer;
+mod recognizer;
 mod try_accept;
 
 pub struct Dokearley<'gr> {
@@ -134,6 +134,7 @@ Target: "all enemies" -> Target { kind: "enemies" }
     fn parse_heal_self() {
         let engine = make_engine();
         let result = engine.parse("to self : heal for 7", "ItemEffect").unwrap();
+        print!("{:?}", &result);
         match result {
             Value::Resource { typ, fields } => {
                 assert_eq!(typ, "TargetedEffect");

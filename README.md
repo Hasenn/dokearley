@@ -4,6 +4,33 @@ Earley parser and grammar parser for `Doke`. Allows game-devs to write DSLs quic
 
 Includes `dokedef`, a language to write those DSLs, and a parser to parse those DSLs, returning a Resource-like rust enum.
 
+## Usage
+
+```rust
+// An input dokedef file.
+let grammar_input = r#"
+ItemEffect: "deal {amount:Int} damage" -> Damage
+ItemEffect: "heal for {amount:Int}" -> Heal
+ItemEffect: "apply {status:String}" -> ApplyStatus
+Target: "self" -> Target { kind: "self" }
+Target: "an ally" -> Target { kind: "ally" }
+Target: "all enemies" -> Target { kind: "enemies" }
+"#;
+// Build the parser from the dokedef.
+let parser = Dokearley::from_dokedef(grammar).expect("invalid grammar");
+// Get a result from an input statement, and a <Start> Nonterminal, which tries to parse the input as a <Start>
+let result = parser.parse("to self : heal for 7", "ItemEffect").unwrap();
+dbg!(result);
+// 
+// Resource {
+//   typ: "TargetedEffect", 
+//   fields: {
+//      "target": Resource { typ: "Target", fields: {"kind": String("self")}}, 
+//      "effect": Resource { typ: "Heal", fields: {"amount": Integer(7)} }} 
+//  }
+```
+
+
 
 ## Example
 
@@ -55,12 +82,15 @@ TargetedEffect {
 
 RemoveStatus { status: "poison" }
 ```
+
+# Notes
+
 *Strings are written as litterals, this is not exactly superb, i will add config to allow using some other syntax that looks pretty in markdown, like **poison**. *
 
 The String type could also be split into multiple "aliases" and you could specify `{stat : BoldString}` `{stat : WikiLink}` allowing **poison** or [[poison]] (which is good with editors like Obsidian, as it shows you what undocumented status effect you might have used and allows you to link to their definition in the wiki right then and there)
 In this case, i would allow `String` to take any of these. This needs more specification though.
 
-# Notes
+
 
 It should be said that for ambiguous grammars, this parser is O(n^3). 
 Though in practice, this is meant for small statements of bounded size and therefore would still be linear.
