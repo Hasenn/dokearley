@@ -82,6 +82,20 @@ TargetedEffect {
 
 RemoveStatus { status: "poison" }
 ```
+### Dictionaries
+
+You can use dict instead of resources too, they behave the same way without a type name,
+and map to a dictionary type in the game engine.
+
+```
+Target: "self" -> { kind: "self" }
+Target: "an ally" -> { kind: "ally" }
+Target: "an enemy" -> Target { kind: "enemy" }
+
+Target: "{name : String}" -> {}
+```
+
+As seen in that last example, dictionaries also capture placeholders into themselves.
 
 # Notes
 

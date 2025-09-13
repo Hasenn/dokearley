@@ -1,6 +1,6 @@
 [package]
 name = "dokearley"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 authors = ["Eliott Veyrier"]
 description = "Earley parser + DSL grammar language for game devs"
