@@ -180,7 +180,6 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
     }
 }
 
-
 #[cfg(test)]
 mod try_accept_file_tests {
     use super::*;

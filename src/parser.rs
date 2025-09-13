@@ -346,8 +346,6 @@ pub enum Value<'gr, 'inp> {
     },
 }
 
-
-
 impl<'gr, 'inp> ParseTree<'gr, 'inp>
 where
     'gr: 'inp,

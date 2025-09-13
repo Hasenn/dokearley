@@ -78,6 +78,50 @@ You will find that there are no bools. I will also add them, though probably onl
 
 Currently case-sensitive. I will maybe add a symbol group syntax like `[aA]` to allow for quick handling of that, or add an optional lowercase matching.
 
+---
+
+## Emoji Support
+
+Dokearley grammars aren’t limited to plain text – you can also define rules using **emoji** or any UTF-8 (not too weird though).
+This allows for more compact and friendly syntax in some cases.
+
+For example, you could add emoji aliases for some things:
+
+```
+(...)
+ItemEffect: "🔥{amount:Int}" -> FireDamage
+ItemEffect: "💖{amount:Int}" -> Heal
+ItemEffect: "💀" -> ApplyStatus { status: "death" }
+ItemEffect: "+{amount:Int}🛡️" -> Buff { stat: "defense" }
+
+Target: "🙂" -> Target { kind: "self" }
+Target: "👹" -> Target { kind: "enemy" }
+Target: "🤝" -> Target { kind: "ally" }
+```
+
+And then statements like:
+
+```
+👹 🔥12
+🙂 💖7
++5🛡️
+```
+
+Would parse into resources like:
+
+```
+TargetedEffect {
+  target: Target { kind: "enemy" },
+  effect: FireDamage { amount: 12 }
+}
+
+TargetedEffect {
+  target: Target { kind: "self" },
+  effect: Heal { amount: 7 }
+}
+
+Buff { stat: "defense", amount: 5 }
+```
 # Dokedef File Format
 
 This project provides a **domain-specific grammar format** for defining game mechanics, actions, and effects. Unlike general-purpose language grammars, this format is **tailored for game-making**, focusing on structured actions, placeholders, and output values.

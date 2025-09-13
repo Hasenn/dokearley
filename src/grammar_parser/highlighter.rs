@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::grammar_parser::{Rule, RuleRhs, Str, Symbol, ValueSpec};
+use crate::grammar_parser::{Rule, RuleRhs, Str, Symbol, ValueSpec, Pattern};
 
 /// What kind of token this is for highlighting
 #[derive(Debug, Clone, Copy)]
@@ -42,19 +42,42 @@ pub fn highlight_tokens<'a>(_input: &'a str, rules: &[Rule<'a>]) -> Vec<Highligh
         // LHS
         tokens.push(span_token(&rule.lhs, HighlightKind::LHS));
 
-        // Pattern symbols
-        for sym in &rule.pattern {
-            match sym {
-                Symbol::Terminal(t) => {
-                    tokens.push(span_token(t, HighlightKind::Terminal));
+        // Pattern symbols — handle Pattern::Normal and Pattern::Disjunction
+        match &rule.pattern {
+            Pattern::Normal(symbols) => {
+                for sym in symbols {
+                    match sym {
+                        Symbol::Terminal(t) => {
+                            tokens.push(span_token(t, HighlightKind::Terminal));
+                        }
+                        Symbol::Placeholder { name, typ } => {
+                            // {name:Type}
+                            tokens.push(span_token(name, HighlightKind::PlaceholderName));
+                            tokens.push(span_token(typ, HighlightKind::PlaceholderType));
+                        }
+                        Symbol::NonTerminal(nt) => {
+                            tokens.push(span_token(nt, HighlightKind::NonTerminal));
+                        }
+                    }
                 }
-                Symbol::Placeholder { name, typ } => {
-                    // {name:Type}
-                    tokens.push(span_token(name, HighlightKind::PlaceholderName));
-                    tokens.push(span_token(typ, HighlightKind::PlaceholderType));
-                }
-                Symbol::NonTerminal(nt) => {
-                    tokens.push(span_token(nt, HighlightKind::NonTerminal));
+            }
+            Pattern::Disjunction(symbols) => {
+                // disjunction is a list of single NonTerminals (as you build them)
+                // highlight each nonterminal
+                for sym in symbols {
+                    match sym {
+                        Symbol::NonTerminal(nt) => {
+                            tokens.push(span_token(nt, HighlightKind::NonTerminal));
+                        }
+                        // In case you later allow other kinds in disjunction, handle them too:
+                        Symbol::Terminal(t) => {
+                            tokens.push(span_token(t, HighlightKind::Terminal));
+                        }
+                        Symbol::Placeholder { name, typ } => {
+                            tokens.push(span_token(name, HighlightKind::PlaceholderName));
+                            tokens.push(span_token(typ, HighlightKind::PlaceholderType));
+                        }
+                    }
                 }
             }
         }
@@ -96,6 +119,11 @@ pub fn highlight_tokens<'a>(_input: &'a str, rules: &[Rule<'a>]) -> Vec<Highligh
                             }
                         }
                     }
+                }
+                RuleRhs::Transparent => {
+                    // Transparent has no explicit RHS text to highlight.
+                    // We already highlighted the pattern (which for transparent rules
+                    // is a single nonterminal), so nothing more to do here.
                 }
             }
         }
