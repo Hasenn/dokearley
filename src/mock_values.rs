@@ -1,7 +1,6 @@
 use crate::grammar_parser::Str;
 use crate::recognizer::ValueSpec;
 use chumsky::span::SimpleSpan;
-use std::collections::HashMap;
 use std::ops::Range;
 
 // Helper functions for creating Value instances with proper spans
@@ -51,7 +50,9 @@ impl<'gr> ValueSpec<'gr> {
 
 // Extension trait for easy conversion from &str to Value
 pub trait MockValue<'gr> {
+    #[allow(dead_code)]
     fn as_identifier(&self) -> ValueSpec<'gr>;
+    #[allow(dead_code)]
     fn as_string_literal(&self) -> ValueSpec<'gr>;
     fn as_identifier_with_span(&self, span: Range<usize>) -> ValueSpec<'gr>;
     fn as_string_literal_with_span(&self, span: Range<usize>) -> ValueSpec<'gr>;
@@ -75,22 +76,15 @@ impl<'gr> MockValue<'gr> for &'gr str {
     }
 }
 
-// Helper function to create HashMap for OutSpec::Resource
-pub fn mock_resource_fields<'gr, const N: usize>(
-    fields: [(&'gr str, ValueSpec<'gr>); N],
-) -> HashMap<&'gr str, ValueSpec<'gr>> {
-    fields.into_iter().collect()
-}
-
-// Additional helper for creating more realistic test scenarios
-pub fn create_realistic_span(text: &str, start: usize) -> SimpleSpan<usize> {
-    SimpleSpan::from(start..start + text.len())
-}
-
 // Example usage in tests
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Additional helper for creating more realistic test scenarios
+    pub fn create_realistic_span(text: &str, start: usize) -> SimpleSpan<usize> {
+        SimpleSpan::from(start..start + text.len())
+    }
 
     #[test]
     fn test_mock_value_creation_with_spans() {

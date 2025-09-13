@@ -10,8 +10,8 @@ enum NumLit<'gr> {
     Float(&'gr str), // full literal (with sign included)
 }
 
-pub(crate) fn number_literal<'gr>()
--> impl Parser<'gr, &'gr str, ValueSpec<'gr>, extra::Err<Rich<'gr, char>>> {
+pub(crate) fn number_literal<'gr>(
+) -> impl Parser<'gr, &'gr str, ValueSpec<'gr>, extra::Err<Rich<'gr, char>>> {
     let sign = just('-').or(just('+')).or_not();
 
     let bin = sign

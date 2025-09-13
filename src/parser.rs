@@ -1,5 +1,5 @@
 use crate::recognizer::{
-    self, Chart, Grammar, OutSpec, Production, Symbol, Token, ValueSpec, is_builtin,
+    is_builtin, Chart, Grammar, OutSpec, Production, Symbol, Token, ValueSpec,
 };
 use std::{collections::HashMap, usize};
 
@@ -204,6 +204,7 @@ where
 
 impl<'gr, 'inp> ParseTree<'gr, 'inp> {
     /// Pretty-print the parse tree with indentation
+    #[allow(dead_code)]
     pub fn pretty_print(&self, indent: usize) {
         let padding = "  ".repeat(indent);
         match self {
@@ -222,8 +223,7 @@ impl<'gr, 'inp> ParseTree<'gr, 'inp> {
 
 #[cfg(test)]
 mod parse_tree_pretty_tests {
-    use super::*;
-    use crate::recognizer::{Chart, Grammar, OutSpec, Production, Symbol, ValueSpec, tokenize};
+    use crate::recognizer::{tokenize, Chart, Grammar, OutSpec, Production, Symbol, ValueSpec};
 
     fn dummy_outspec<'gr>() -> OutSpec<'gr> {
         OutSpec::Value(ValueSpec::FloatLiteral(0.0))
@@ -352,12 +352,17 @@ where
 {
     pub fn compute_value(&self) -> Value<'gr, 'inp> {
         match self {
-            ParseTree::Token(tok) => tok.get_value().unwrap_or(Value::String(tok.text)), // fallback for structural chars
+            // Tokens can yield a value if needed, but this would not be used currently.
+            ParseTree::Token(tok) => tok.get_value().unwrap_or(Value::String(tok.text)),
+            // For nodes, we check the OutSpec and do what it says
             ParseTree::Node { rule, children } => match &rule.out {
+                // The outspec is a value
                 OutSpec::Value(spec) => match spec {
+                    // Literals get passed literally
                     ValueSpec::IntegerLiteral(i) => Value::Integer(*i),
                     ValueSpec::FloatLiteral(f) => Value::Float(*f),
                     ValueSpec::StringLiteral(s) => Value::String(s),
+                    // Identifiers mean we look for a placeholder to bind the value of
                     ValueSpec::Identifier(name) => {
                         // find first child matching placeholder name
                         children
@@ -373,7 +378,7 @@ where
                                         _ => None,
                                     },
                                 ),
-                                ParseTree::Token(tok) => None,
+                                ParseTree::Token(_tok) => None,
                             })
                             .unwrap_or(Value::String("<missing>"))
                     }
@@ -473,7 +478,7 @@ where
 #[cfg(test)]
 mod parse_tree_value_tests {
     use super::*;
-    use crate::{mock_values::MockValue, recognizer::tokenize};
+    use crate::recognizer::tokenize;
 
     #[test]
     fn compute_value_simple_effect() {

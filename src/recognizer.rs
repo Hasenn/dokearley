@@ -1,9 +1,6 @@
-use chumsky::Parser;
 
 pub use crate::grammar_parser::OutSpec;
-pub use crate::grammar_parser::RuleRhs;
 pub use crate::grammar_parser::ValueSpec;
-use crate::grammar_parser::rules;
 use crate::parser::Value;
 use std::collections::{HashMap, HashSet};
 
@@ -111,12 +108,6 @@ impl<'gr> Grammar<'gr> {
 impl<'gr> Grammar<'gr> {
     /// Detect whether the grammar contains an infinite nullable cycle (a cycle
     /// entirely through nullable nonterminals / placeholder types).
-    ///
-    /// This mirrors the OCaml `infinite_loop` you provided: compute the set of
-    /// nullable symbols, build edges from a nullable LHS to each nonterminal or
-    /// placeholder-type that appears in a production for that LHS whose RHS is
-    /// entirely nullable, and then check whether there is a directed cycle
-    /// reachable from some nullable symbol.
     pub fn has_infinite_loop(&self) -> bool {
         use std::collections::{HashMap, HashSet};
 
@@ -358,15 +349,6 @@ pub fn is_builtin(typ: &str, tok: &Token<'_>) -> bool {
     }
 }
 
-pub fn is_typ_builtin(typ: &str) -> bool {
-    match typ.to_ascii_lowercase().as_str() {
-        "int" => true,
-        "float" => true,
-        "string" | "str" => true,
-        _ => false,
-    }
-}
-
 pub struct Chart<'gr, 'inp> {
     pub sets: Vec<HashMap<ItemKey, Item>>,
     pub tokens: Vec<Token<'inp>>,
@@ -545,19 +527,8 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
     }
 }
 
-pub struct RuleHint<'gr> {
-    pub lhs: &'gr str,
-    pub remaining_rhs: Vec<Symbol<'gr>>,
-    pub start_pos: usize,
-}
-
-pub struct ParseError<'gr, 'inp> {
-    pub pos: usize,
-    pub found: Option<&'inp str>,
-    pub hints: Vec<RuleHint<'gr>>,
-}
-
 impl<'gr, 'inp> Chart<'gr, 'inp> {
+    #[allow(dead_code)]
     pub fn print_chart(&self) {
         // For each Earley set
         for (i, set) in self.sets.iter().enumerate() {

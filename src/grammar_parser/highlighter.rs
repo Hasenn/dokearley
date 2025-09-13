@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::grammar_parser::{Rule, RuleRhs, Str, Symbol, ValueSpec, Pattern};
+use crate::grammar_parser::{Pattern, Rule, RuleRhs, Str, Symbol, ValueSpec};
 
 /// What kind of token this is for highlighting
 #[derive(Debug, Clone, Copy)]

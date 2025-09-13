@@ -1,17 +1,18 @@
-use std::{process::Output, vec};
-
 use crate::{
     grammar_parser::rules,
     recognizer::{Chart, Grammar},
 };
-use chumsky::{Parser, error};
+use chumsky::Parser;
 use thiserror::Error;
-pub mod grammar_parser;
 mod conversion;
-mod mock_values;
+pub mod grammar_parser;
+
 mod parser;
 mod recognizer;
 mod try_accept;
+
+#[cfg(test)]
+mod mock_values;
 
 pub struct Dokearley<'gr> {
     grammar: Grammar<'gr>,
@@ -55,8 +56,9 @@ pub enum DokearleyError {
     ParseError(#[from] try_accept::ParseError),
     #[error("Could not build parse tree, this is a bug in Dokearley!!")]
     DokearleyBuildParseTreeError,
+    #[error("There is an infinite loop of nullable symbols in the provided grammar")]
+    InfiniteNullableLoop,
 }
-
 
 /// A parser that recognizes and parses a custom grammar, defined in a `dokedef` file.
 impl<'gr> Dokearley<'gr> {
@@ -77,7 +79,11 @@ impl<'gr> Dokearley<'gr> {
                 } else {
                     let rules = rules.output();
                     if let Some(rules) = rules {
-                        rules.into()
+                        let grammar: Grammar<'gr> = rules.into();
+                        if grammar.has_infinite_loop() {
+                            Err(DokearleyError::InfiniteNullableLoop)?
+                        }
+                        grammar
                     } else {
                         Err(DokearleyError::InvalidDokedef("??".to_string()))?
                     }
@@ -448,8 +454,6 @@ HealEffect   : "heal for {amount:Int}"    -> Heal
         );
     }
 }
-
-
 
 #[cfg(test)]
 mod disjunction_rules_tests {

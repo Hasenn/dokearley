@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::recognizer::{Chart, Item};
-use crate::recognizer::{Grammar, Production, Symbol};
+use crate::recognizer::{Chart};
+use crate::recognizer::{Grammar,Symbol};
 use std::collections::{HashMap, HashSet};
 
 /// A parse error with both user-friendly and developer-friendly details
@@ -184,7 +184,7 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
 mod try_accept_file_tests {
     use super::*;
     use crate::grammar_parser::{OutSpec, ValueSpec};
-    use crate::recognizer::{Production, tokenize};
+    use crate::recognizer::{tokenize, Production};
     use std::fs;
     use std::path::Path;
 

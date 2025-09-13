@@ -1,7 +1,3 @@
-use std::fs::{self, File};
-use std::io::Write;
-use std::path::Path;
-
 use chumsky::Parser;
 
 use crate::grammar_parser::rules;
@@ -9,7 +5,6 @@ use crate::grammar_parser::rules;
 #[cfg(test)]
 mod invalid_input_tests {
     use super::*;
-    use chumsky::prelude::*;
     use std::fs::{self, File};
     use std::io::Write;
     use std::path::Path;

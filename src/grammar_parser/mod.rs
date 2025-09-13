@@ -162,18 +162,20 @@ impl<'gr> From<&Vec<Rule<'gr>>> for Grammar<'gr> {
         for rule in value {
             match &rule.pattern {
                 Pattern::Normal(symbols) => productions.push(Production {
-                lhs: rule.lhs,
-                rhs: symbols.clone(),
-                out: OutSpec::from(rule.rhs.clone()),
-        }),
-                Pattern::Disjunction(symbols) => productions.extend(symbols.iter().map(|nt| {
-                    Production { lhs: rule.lhs, rhs: vec![*nt], out: OutSpec::Transparent }
-                })),
+                    lhs: rule.lhs,
+                    rhs: symbols.clone(),
+                    out: OutSpec::from(rule.rhs.clone()),
+                }),
+                Pattern::Disjunction(symbols) => {
+                    productions.extend(symbols.iter().map(|nt| Production {
+                        lhs: rule.lhs,
+                        rhs: vec![*nt],
+                        out: OutSpec::Transparent,
+                    }))
+                }
             }
         }
-        Self {
-            productions
-        }
+        Self { productions }
     }
 }
 
@@ -206,15 +208,13 @@ pub fn rules_raw<'gr>() -> impl Parser<'gr, &'gr str, Vec<Rule<'gr>>, extra::Err
 fn transparent_rule<'gr>() -> impl Parser<'gr, &'gr str, Rule<'gr>, extra::Err<Rich<'gr, char>>> {
     ident()
         .then_ignore(just(':').padded())
-        .then(
-            ident()
-                .separated_by(just('|').padded())
-                .collect::<Vec<_>>(),
-        )
+        .then(ident().separated_by(just('|').padded()).collect::<Vec<_>>())
         .padded_by(inline_whitespace())
         .map_with(|(lhs, pattern), _extra| Rule {
             lhs,
-            pattern: Pattern::Disjunction(pattern.iter().map(|x|Symbol::NonTerminal(*x)).collect()),
+            pattern: Pattern::Disjunction(
+                pattern.iter().map(|x| Symbol::NonTerminal(*x)).collect(),
+            ),
             rhs: Some(RuleRhs::Transparent),
         })
         .labelled("rule")
@@ -233,7 +233,7 @@ fn normal_rule<'gr>() -> impl Parser<'gr, &'gr str, Rule<'gr>, extra::Err<Rich<'
         )
         .map_with(|((lhs, pattern), opt_rhs), _extra| Rule {
             lhs,
-            pattern : Pattern::Normal(pattern),
+            pattern: Pattern::Normal(pattern),
             rhs: opt_rhs,
         })
         .labelled("rule")
@@ -263,8 +263,8 @@ fn terminal_text<'gr>() -> impl Parser<'gr, &'gr str, Symbol<'gr>, extra::Err<Ri
         .labelled("terminal text")
 }
 
-fn pattern_in_quotes<'gr>()
--> impl Parser<'gr, &'gr str, Vec<Symbol<'gr>>, extra::Err<Rich<'gr, char>>> {
+fn pattern_in_quotes<'gr>(
+) -> impl Parser<'gr, &'gr str, Vec<Symbol<'gr>>, extra::Err<Rich<'gr, char>>> {
     just('"')
         .ignore_then(
             choice((placeholder(), terminal_text()))
@@ -304,8 +304,8 @@ fn field_value<'gr>() -> impl Parser<'gr, &'gr str, ValueSpec<'gr>, extra::Err<R
     ))
 }
 
-fn fields_parser<'gr>()
--> impl Parser<'gr, &'gr str, Vec<(Str<'gr>, ValueSpec<'gr>)>, extra::Err<Rich<'gr, char>>> {
+fn fields_parser<'gr>(
+) -> impl Parser<'gr, &'gr str, Vec<(Str<'gr>, ValueSpec<'gr>)>, extra::Err<Rich<'gr, char>>> {
     ident()
         .padded()
         .then_ignore(just(':').padded())

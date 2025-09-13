@@ -1,7 +1,7 @@
 use chumsky::Parser;
 use colored::*;
 use dokearley::grammar_parser;
-use grammar_parser::highlighter::{HighlightKind, highlight_tokens};
+use grammar_parser::highlighter::{highlight_tokens, HighlightKind};
 use grammar_parser::rules;
 use std::io::{self, Read};
 

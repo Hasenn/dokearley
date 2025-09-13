@@ -177,9 +177,7 @@ Greeting : "Hi" => Message
         let pattern1 = unwrap_normal(&result[0].pattern);
         let pattern2 = unwrap_normal(&result[1].pattern);
 
-        if let (Symbol::Terminal(t1), Symbol::Terminal(t2)) =
-            (&pattern1[0], &pattern2[0])
-        {
+        if let (Symbol::Terminal(t1), Symbol::Terminal(t2)) = (&pattern1[0], &pattern2[0]) {
             assert_eq!(*t1, "Hello");
             assert_eq!(*t2, "Hi");
         }
