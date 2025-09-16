@@ -7,8 +7,9 @@ Includes `dokedef`, a language to write those DSLs, and a parser to parse those 
 ## Usage
 
 ```rust
+use dokearley::Dokearley;
 // An input dokedef file.
-let grammar_input = r#"
+let grammar = r#"
 ItemEffect: "deal {amount:Int} damage" -> Damage
 ItemEffect: "heal for {amount:Int}" -> Heal
 ItemEffect: "apply {status:String}" -> ApplyStatus
@@ -19,7 +20,7 @@ Target: "all enemies" -> Target { kind: "enemies" }
 // Build the parser from the dokedef.
 let parser = Dokearley::from_dokedef(grammar).expect("invalid grammar");
 // Get a result from an input statement, and a <Start> Nonterminal, which tries to parse the input as a <Start>
-let result = parser.parse("to self : heal for 7", "ItemEffect").unwrap();
+let result = parser.parse("heal for 7", "ItemEffect").unwrap();
 dbg!(result);
 // 
 // Resource {

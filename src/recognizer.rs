@@ -515,7 +515,7 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
             }
         }
     }
-
+    /// After recognizing, checks wether the start symbol accepts the input.
     pub fn accepted(&self, start: &str) -> bool {
         let n = self.tokens.len();
         self.sets[n].values().any(|it| {
@@ -528,6 +528,7 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
 
 impl<'gr, 'inp> Chart<'gr, 'inp> {
     #[allow(dead_code)]
+    /// Pretty printing for debugging earley items.
     pub fn print_chart(&self) {
         // For each Earley set
         for (i, set) in self.sets.iter().enumerate() {
@@ -577,7 +578,7 @@ impl<'gr, 'inp> Chart<'gr, 'inp> {
     }
 }
 
-// ... (tests remain the same, they only use recognition, not parsing)
+// -------------- TESTS
 
 #[cfg(test)]
 mod recognizer_tests {

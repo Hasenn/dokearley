@@ -1,3 +1,30 @@
+//! This crate uses an earley parser (Dokearley) to parse input from a `dokedef`.
+//! It also parses said `dokedef`, and can highlight it.
+//! ```rust
+//!use dokearley::Dokearley;
+//! // An input dokedef file.
+//! let grammar = r#"
+//! ItemEffect: "deal {amount:Int} damage" -> Damage
+//! ItemEffect: "heal for {amount:Int}" -> Heal
+//! ItemEffect: "apply {status:String}" -> ApplyStatus
+//! Target: "self" -> Target { kind: "self" }
+//! Target: "an ally" -> Target { kind: "ally" }
+//! Target: "all enemies" -> Target { kind: "enemies" }
+//! "#;
+//! // Build the parser from the dokedef.
+//! let parser = Dokearley::from_dokedef(grammar).expect("invalid grammar");
+//! // Get a result from an input statement, and a <Start> Nonterminal, which tries to parse the input as a <Start>
+//! let result = parser.parse("heal for 7", "ItemEffect").unwrap();
+//! dbg!(result);
+//! // 
+//! // Resource {
+//! //   typ: "TargetedEffect", 
+//! //   fields: {
+//! //      "target": Resource { typ: "Target", fields: {"kind": String("self")}}, 
+//! //      "effect": Resource { typ: "Heal", fields: {"amount": Integer(7)} }} 
+//! //  }
+//! ```
+//! 
 use crate::{
     grammar_parser::rules,
     recognizer::{Chart, Grammar},
@@ -5,6 +32,7 @@ use crate::{
 use chumsky::Parser;
 use thiserror::Error;
 mod conversion;
+/// `dokedef` parser for the grammars, including highlighting utilities.
 pub mod grammar_parser;
 
 mod parser;
@@ -20,17 +48,33 @@ pub struct Dokearley<'gr> {
 
 use std::collections::HashMap;
 
+/// The output value type of any grammar,
+/// compatible with most games engines.
+/// Resources can map to custom Resources in Godot,
+/// or to ScriptableObjects in unity.
+/// They can be nested.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
+    /// An i64 integer
     Integer(i64),
+    /// An f64 float
     Float(f64),
+    /// An (owned) String
     String(String),
+    /// true or false.
     Bool(bool),
+    /// Represents some user data type with a type and some fields
+    /// to be built by a factory.
+    /// The fields are implemented as a HashMap<String, Value>
     Resource {
+        /// The type of this resource
         typ: String,
+        /// The fields of this resource
         fields: HashMap<String, Value>,
     },
+    /// An array, implmented as a Vec
     Array(Vec<Value>),
+    /// A dictionary, implemented as a HashMap<String, Value>
     Dictionary(HashMap<String, Value>),
 }
 
@@ -58,14 +102,20 @@ impl<'gr, 'inp> From<crate::parser::Value<'gr, 'inp>> for Value {
     }
 }
 
+/// Errors for parsing grammar files or the input
 #[derive(Debug, Error)]
 pub enum DokearleyError {
+    /// Parsing the grammar failed
     #[error("Error(s) while parsing the grammar : {0}")]
     InvalidDokedef(String),
+    /// Parsing the input failed
     #[error("Error while parsing input : {0}")]
     ParseError(#[from] try_accept::ParseError),
+    /// This error would be a bug in dokearley, where it can't get a derivation for an accepted grammar.
     #[error("Could not build parse tree, this is a bug in Dokearley!!")]
     DokearleyBuildParseTreeError,
+    /// Parsing the grammar worked, but it is rejected due to being dubious, 
+    /// i.e. having an infinite loop of nullable symbols that would blow up the earley parser.
     #[error("There is an infinite loop of nullable symbols in the provided grammar")]
     InfiniteNullableLoop,
 }

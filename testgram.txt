@@ -1,7 +1,30 @@
-Greeting : "Hello" => Message
-Greeting : "Hi" => Message
+ItemEffect: "deal {amount:int} damage" -> Damage
+ItemEffect: "heal for {amount:int}" -> Heal
+ItemEffect: "apply {status:String}" -> ApplyStatus
+ItemEffect: "remove {status:String}" -> RemoveStatus
+ItemEffect: "increase {stat:String} by {amount:int}" -> Buff 
+ItemEffect: "decrease {stat:String} by {amount:int}" -> Debuff 
 
-DoSomething : "{action:String}" -> Action
-DoSomethingElse : "{verb:String} {object:String}" => Action
+ItemEffect: "to {target : Target} : {effect : ItemEffect}" -> TargetedEffect
 
-Person : "Default Person" => Person{name: "name" , age: 350, height : 2.0e-3 }
+Target: "self" -> Target { kind: "self" }
+Target: "an ally" -> Target { kind: "ally" }
+Target: "an enemy" -> Target { kind: "enemy" }
+Target: "all allies" -> Target { kind: "allies" }
+Target: "all enemies" -> Target { kind: "enemies" }
+
+
+ItemEffect: "🔥 {amount:int}" -> FireDamage
+ItemEffect: "💖 {amount:int}" -> Heal
+ItemEffect: "💀" -> ApplyStatus { status: "death" }
+ItemEffect: "😡" -> ApplyStatus { status: "rage" }
+ItemEffect: "🛡️+{amount:int}" -> Buff { stat: "defense" }
+ItemEffect: "🗡️+{amount:int}" -> Buff { stat: "attack" }
+
+ItemEffect: "{target:Target} {effect:ItemEffect}" -> TargetedEffect
+
+Target: "🙂" -> Target { kind: "self" }
+Target: "🤝" -> Target { kind: "ally" }
+Target: "👹" -> Target { kind: "enemy" }
+Target: "👨‍👩‍👦" -> Target { kind: "allies" }
+Target: "👥" -> Target { kind: "enemies" }
