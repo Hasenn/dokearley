@@ -167,11 +167,12 @@ TargetedEffect {
 
 Buff { stat: "defense", amount: 5 }
 ```
+
 # Dokedef File Format
 
-This project provides a **domain-specific grammar format** for defining game mechanics, actions, and effects. Unlike general-purpose language grammars, this format is **tailored for game-making**, focusing on structured actions, placeholders, and output values.
+This project provides a **domain-specific grammar format** for defining game mechanics, actions, and effects. Unlike general-purpose language grammars, this format is **tailored for game-making**, focusing on being simple to use for this use case.
 
-It is designed to work with our parser and recognizer, generating Resources (effects, actions, etc.) from structured text inputs.
+It is designed to generate Resources or Dictionaries from structured text inputs.
 
 ---
 
@@ -227,10 +228,16 @@ NonTerminal : "literal text with optional {things : Type}" -> OutputSpec
     
     - A single type: `DamageEffect`
         
-    - A composite Resource with fixed fields: `PartiallyBuiltType{foo : "bar", bar : 2501}`
+    - A composite Resource, possibly with fixed fields: `PartiallyBuiltType{foo : "bar", bar : 2501}`
         
-    - Propagation of fields from placeholders: `{}` giving all the fields to the placeholder's rule. (UNSTABLE, will become dicts instead !)
-        
+    - A dictionary, possibly with fixed fields  `{some : "thing"}`
+
+You can do `{foo : bar}` to tie the value of bar in the placeholders, to foo. Note that if `bar = "baz"` is captured, this will produce a resource/dict
+with both `foo = "baz"` and `bar : "baz"`
+
+As resources will usually be pruned of unwanted fields, this is okay, 
+but it gives some trouble if warning for mis-named fields that
+have a typo and mismatch between in-engine and in-grammar
 
 ---
 
@@ -262,19 +269,7 @@ Effect : "{first : Effect}, then : {then : Effect}" -> EffectThenEffect
 
 ---
 
-### 3. Propagating Fields
-
-```
-NonTerminal : "pattern with {place : holders}" -> {}
-```
-
-- Automatically propagates captured fields into the output.
-    
-- Useful when intermediate structures are not needed, but you want to forward fields.
-    
-
----
-### 5. Disjonction
+### 3. Disjonction
 
 ```
 Effect : DamageEffect | SomeEffect | AnotherThing
