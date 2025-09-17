@@ -316,7 +316,7 @@ fn children_field<'gr>(
     ident()
         .padded()
         .then_ignore(just("<*").padded())
-        .then(ident().map_with(|name , extra| ValueSpec::Children(name)))
+        .then(ident().map_with(|name , _extra| ValueSpec::Children(name)))
 }
 
 fn child_field<'gr>(
@@ -324,7 +324,7 @@ fn child_field<'gr>(
     ident()
         .padded()
         .then_ignore(just('<').padded())
-        .then(ident().map_with(|name , extra| ValueSpec::Child(name)))
+        .then(ident().map_with(|name , _extra| ValueSpec::Child(name)))
 }
 
 
