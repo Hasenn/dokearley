@@ -54,6 +54,7 @@ fn main() {
             HighlightKind::IntegerLiteral => tok.text.cyan().dimmed(),
             HighlightKind::FloatLiteral => tok.text.cyan().dimmed(),
             HighlightKind::Identifier => tok.text.white(),
+            HighlightKind::ChildName => tok.text.red(),
         };
 
         print!("{}", colored_text);

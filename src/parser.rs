@@ -358,6 +358,10 @@ pub enum Value<'gr, 'inp> {
         fields: HashMap<&'gr str, Value<'gr, 'inp>>,
     },
     Dictionary(HashMap<&'gr str, Value<'gr, 'inp>>),
+    /// A value that will come from the first child matching the given non-terminal.
+    Child(&'gr str),
+    /// A value that will collect all children matching the given non-terminal into a vec.
+    Children(&'gr str),
 }
 
 impl<'gr, 'inp> ParseTree<'gr, 'inp>
@@ -376,24 +380,26 @@ where
                     ValueSpec::StringLiteral(s) => Value::String(s),
                     ValueSpec::BoolLiteral(b) => Value::Bool(*b),
                     ValueSpec::Identifier(name) => {
-                        // find first child matching placeholder name
-                        children
-                            .iter()
-                            .find_map(|c| match c {
-                                ParseTree::Node {
-                                    rule: child_rule, ..
-                                } => child_rule.rhs.iter().zip(c.as_children()).find_map(
-                                    |(sym, child)| match sym {
-                                        Symbol::Placeholder { name: n, .. } if *n == **name => {
-                                            Some(child.compute_value())
-                                        }
-                                        _ => None,
-                                    },
-                                ),
-                                ParseTree::Token(_tok) => None,
-                            })
-                            .unwrap_or(Value::String("<missing_placeholder>"))
-                    }
+                                        // find first child matching placeholder name
+                                        children
+                                            .iter()
+                                            .find_map(|c| match c {
+                                                ParseTree::Node {
+                                                    rule: child_rule, ..
+                                                } => child_rule.rhs.iter().zip(c.as_children()).find_map(
+                                                    |(sym, child)| match sym {
+                                                        Symbol::Placeholder { name: n, .. } if *n == **name => {
+                                                            Some(child.compute_value())
+                                                        }
+                                                        _ => None,
+                                                    },
+                                                ),
+                                                ParseTree::Token(_tok) => None,
+                                            })
+                                            .unwrap_or(Value::String("<missing_placeholder>"))
+                                    }
+                    ValueSpec::Child(c) => Value::Child(c),
+                    ValueSpec::Children(c) => Value::Children(c),
                 },
                 // If the outspec says to build a resource, make it
                 OutSpec::Resource { typ, fields } => {
@@ -431,13 +437,16 @@ where
                     for (k, v) in fields {
                         let val = match v {
                             ValueSpec::Identifier(n) => children
-                                .iter()
-                                .find_map(|c| c.find_placeholder(n))
-                                .unwrap_or(Value::String("<missing_i>")),
+                                                        .iter()
+                                                        .find_map(|c| c.find_placeholder(n))
+                                                        .unwrap_or(Value::String("<missing_i>")),
                             ValueSpec::IntegerLiteral(i) => Value::Integer(*i),
                             ValueSpec::FloatLiteral(f) => Value::Float(*f),
                             ValueSpec::StringLiteral(s) => Value::String(s),
                             ValueSpec::BoolLiteral(b) => Value::Bool(*b),
+                            ValueSpec::Child(c) => Value::Child(c),
+                            ValueSpec::Children(c) => Value::Children(c),
+
                         };
                         result_fields.insert(*k, val);
                     }
@@ -471,12 +480,14 @@ where
                     for (k, v) in fields {
                         let val = match v {
                             ValueSpec::Identifier(name) => {
-                                self.find_placeholder(name).unwrap_or(Value::String("<missing related placeholder>"))
-                            },
+                                                                                self.find_placeholder(name).unwrap_or(Value::String("<missing related placeholder>"))
+                                                                            },
                             ValueSpec::IntegerLiteral(i) => Value::Integer(*i),
                             ValueSpec::FloatLiteral(f) => Value::Float(*f),
                             ValueSpec::StringLiteral(s) => Value::String(s),
                             ValueSpec::BoolLiteral(b) => Value::Bool(*b),
+                            ValueSpec::Child(c) => Value::Child(c),
+                            ValueSpec::Children(c) => Value::Children(c),
                         };
                         result_fields.insert(*k, val);
                     }

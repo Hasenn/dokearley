@@ -117,6 +117,8 @@ pub enum ValueSpec<'gr> {
     IntegerLiteral(i64),
     FloatLiteral(f64),
     BoolLiteral(bool),
+    Child(Str<'gr>),
+    Children(Str<'gr>)
 }
 
 #[derive(Debug, Clone)]
@@ -285,15 +287,47 @@ fn field_value<'gr>() -> impl Parser<'gr, &'gr str, ValueSpec<'gr>, extra::Err<R
 
 fn fields_parser<'gr>(
 ) -> impl Parser<'gr, &'gr str, Vec<(Str<'gr>, ValueSpec<'gr>)>, extra::Err<Rich<'gr, char>>> {
-    ident()
-        .padded()
-        .then_ignore(just(':').padded())
-        .then(field_value())
+    field()
         .separated_by(just(',').padded())
         .collect()
         .map_with(|fields, _span| fields)
         .labelled("fields")
 }
+
+fn field<'gr>(
+) -> impl Parser<'gr, &'gr str, (Str<'gr>, ValueSpec<'gr>), extra::Err<Rich<'gr, char>>> {
+    choice((
+        value_field(),
+        child_field(),
+        children_field()
+    ))
+}
+
+fn value_field<'gr>(
+) -> impl Parser<'gr, &'gr str, (Str<'gr>, ValueSpec<'gr>), extra::Err<Rich<'gr, char>>> {
+    ident()
+        .padded()
+        .then_ignore(just(':').padded())
+        .then(field_value())
+}
+
+fn children_field<'gr>(
+) -> impl Parser<'gr, &'gr str, (Str<'gr>, ValueSpec<'gr>), extra::Err<Rich<'gr, char>>> {
+    ident()
+        .padded()
+        .then_ignore(just("<*").padded())
+        .then(ident().map_with(|name , extra| ValueSpec::Children(name)))
+}
+
+fn child_field<'gr>(
+) -> impl Parser<'gr, &'gr str, (Str<'gr>, ValueSpec<'gr>), extra::Err<Rich<'gr, char>>> {
+    ident()
+        .padded()
+        .then_ignore(just('<').padded())
+        .then(ident().map_with(|name , extra| ValueSpec::Child(name)))
+}
+
+
 
 fn res_out_spec<'gr>() -> impl Parser<'gr, &'gr str, RuleRhs<'gr>, extra::Err<Rich<'gr, char>>> {
     ident()

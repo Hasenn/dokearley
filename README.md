@@ -30,7 +30,69 @@ dbg!(result);
 //      "effect": Resource { typ: "Heal", fields: {"amount": Integer(7)} }} 
 //  }
 ```
+## New features
 
+You can now accept childs in the RHS. This marks fields that will demand Doke to parse
+the child Doke statements into the given field as an array. It will try to parse children
+as the given Non-Terminal, and collect all matching children into an array
+
+```
+Action: "Do the following" -> Action { components <* ActionComponent  }
+ActionComponent : ItemEffect | Action
+```
+
+You can also accept the first child that matches the non-terminal into a field 
+```
+Action: "Do this single thing :" -> Action { component < ActionComponent  }
+```
+
+These can be combined to, for example, allow some actions to accept only a single damage effect,
+and any Components. This aproach would produce some "undefined behaviour" if a child matches two different non-terminals.
+This is left up to DokeParser to specify.
+
+All this will allow the dokeparser to parse component-like things like this
+(See the documentation of doke-parser itself for more information about this)
+
+```
+Do the following:
+ - deal 75 damage to the target
+ - heal yourself for 7
+```
+
+With some clever design (both in the language and in-engine),
+components can give your language this sort of functionality in a few simple rules :
+
+*Some kind of vampiric spell*
+```
+Select two targets :
+  - Deal 5 damage in a 3-cross around the first target
+  - Heal the second target for half of all damage inflicted.
+```
+
+*Auras, on hit effects....*
+```
+Every turn for 6 turns :
+  - Deal 10 damage around yourself. On hit :
+    - Apply 2 poison
+    - Remove 2 poison for yourself
+```
+
+*If statements*
+```
+If your HP is above 50% :
+  - loose half of your HP
+  - deal 20 damage for each HP lost.
+```
+
+*Reaction passives*
+```
+Every time you loose more than 20 HP:
+  - Heal for 10 HP
+```
+
+Implementing this in engine is a matter of cleverly using contexts that the components pass around to the next one.
+
+Parsing this is just some simple rules with the `<` or `<*` children captures.
 
 
 ## Example

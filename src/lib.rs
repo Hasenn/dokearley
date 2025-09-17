@@ -76,6 +76,10 @@ pub enum Value {
     Array(Vec<Value>),
     /// A dictionary, implemented as a HashMap<String, Value>
     Dictionary(HashMap<String, Value>),
+     /// A value that will come from the first child matching the given non-terminal.
+    Child(String),
+    /// A value that will collect all children matching the given non-terminal into a vec.
+    Children(String),
 }
 
 impl<'gr, 'inp> From<crate::parser::Value<'gr, 'inp>> for Value {
@@ -85,19 +89,21 @@ impl<'gr, 'inp> From<crate::parser::Value<'gr, 'inp>> for Value {
             parser::Value::Float(f) => Value::Float(f),
             parser::Value::String(s) => Value::String(s.to_string()),
             parser::Value::Resource { typ, fields } => Value::Resource {
-                typ: typ.to_string(),
-                fields: fields
-                    .into_iter()
-                    .map(|(k, v)| (k.to_string(), v.into()))
-                    .collect(),
-            },
+                        typ: typ.to_string(),
+                        fields: fields
+                            .into_iter()
+                            .map(|(k, v)| (k.to_string(), v.into()))
+                            .collect(),
+                    },
             parser::Value::Bool(b) => Value::Bool(b),
             parser::Value::Dictionary(fields) => Value::Dictionary({
-                fields
-                    .into_iter()
-                    .map(|(k, v)| (k.to_string(), v.into()))
-                    .collect()
-            }),
+                        fields
+                            .into_iter()
+                            .map(|(k, v)| (k.to_string(), v.into()))
+                            .collect()
+                    }),
+            parser::Value::Child(c) => Value::Child(c.to_string()),
+            parser::Value::Children(c) => Value::Children(c.to_string()),
         }
     }
 }
@@ -624,6 +630,57 @@ Effect: "status {status:String}" -> { kind: "status", value: status}
                 m.insert("value".into(), Value::String("burned".into()));
                 m.insert("kind".into(), Value::String("status".into()));
                 m.insert("status".into(), Value::String("burned".into()));
+                m
+            })
+        );
+    }
+}
+
+
+
+#[cfg(test)]
+mod children_outspecs_tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    fn make_engine() -> Dokearley<'static> {
+        // Grammar where RHS directly produces dictionaries
+        let grammar = r#"
+Effect: "gain {amount:Int} gold" -> { kind: "gain_gold", children <* Effect}
+Effect: "lose {amount:Int} health" -> { kind: "lose_health", child < Effect}
+Effect: "status {status:String}" -> { kind: "status", value: status}
+"#;
+
+        Dokearley::from_dokedef(grammar).expect("invalid dictionary grammar")
+    }
+
+        #[test]
+    fn parse_status() {
+        let engine = make_engine();
+        let result = engine.parse("gain 20 gold", "Effect").unwrap();
+        assert_eq!(
+            result,
+            Value::Dictionary({
+                let mut m = HashMap::new();
+                m.insert("amount".into(), Value::Integer(20));
+                m.insert("kind".into(), Value::String("gain_gold".into()));
+                m.insert("children".into(), Value::Children("Effect".to_string()));
+                m
+            })
+        );
+    }
+
+            #[test]
+    fn parse_lost_health() {
+        let engine = make_engine();
+        let result = engine.parse("lose 20 health", "Effect").unwrap();
+        assert_eq!(
+            result,
+            Value::Dictionary({
+                let mut m = HashMap::new();
+                m.insert("amount".into(), Value::Integer(20));
+                m.insert("kind".into(), Value::String("lose_health".into()));
+                m.insert("child".into(), Value::Child("Effect".to_string()));
                 m
             })
         );
