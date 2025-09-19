@@ -42,6 +42,7 @@ mod try_accept;
 #[cfg(test)]
 mod mock_values;
 
+#[derive(Debug, Clone)]
 pub struct Dokearley<'gr> {
     grammar: Grammar<'gr>,
 }
